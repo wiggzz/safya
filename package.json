@@ -1,0 +1,19 @@
+{
+  "name": "safya",
+  "version": "1.0.0",
+  "description": "Simple, scalable, S3 based central unified log",
+  "main": "index.js",
+  "license": "MIT",
+  "author": "Will James",
+  "dependencies": {
+    "aws-sdk": "^2.183.0",
+    "loglevel": "^1.6.1"
+  },
+  "devDependencies": {
+    "chai": "^4.1.2",
+    "mocha": "^4.1.0"
+  },
+  "scripts": {
+    "test": "mocha"
+  }
+}
