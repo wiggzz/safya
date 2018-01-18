@@ -44,30 +44,35 @@ class SafyaConsumer {
 
   async readEvents() {
     let position = await this.getHead();
+    let events = []
 
-    const items = await storage.listObjects({
-      Bucket: this.bucket,
-      Prefix: `events/${position}`
-    });
+    while (true) {
+      const items = await storage.listObjects({
+        Bucket: this.bucket,
+        Prefix: `events/${position}`
+      });
 
-    if (items.length === 0) {
-      return [];
+      if (items.Contents.length === 0) {
+        break;
+      }
+
+      const newEvents = await Promise.all(
+        items.Contents.filter((item) =>
+          item.Key.split('/').pop() !== 'NEXT'
+        ).map((item) => {
+          return this.readEvent(item.Key);
+        }));
+
+      events.push(newEvents);
+
+      position = await this.getNext(position);
+
+      if (!position) {
+        throw new Error('Unexpected lack of next pointer with non-empty dataset.');
+      }
     }
 
-    const events = await Promise.all(
-      items.Contents.filter((item) =>
-        item.Key.split('/').pop() !== 'NEXT'
-      ).map((item) => {
-        return this.readEvent(item.Key);
-      }));
-
-    const next = await this.getNext(position);
-
-    if (!next) {
-      throw new Error('Unexpected lack of next pointer with non-empty dataset.');
-    }
-
-    await this.commitHead(next);
+    await this.commitHead(position);
 
     return events;
   }

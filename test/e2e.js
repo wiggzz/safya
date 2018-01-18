@@ -12,13 +12,10 @@ describe('end to end', () => {
     consumer = new SafyaConsumer({ name: 'test-consumer', bucket: BUCKET });
   });
 
-  describe('after an event is produced by a producer', () => {
-    before(async function () {
-      this.timeout(20000);
+  describe('the consumer', () => {
+    it('should be able to read events after they are produced', async () => {
       await safya.writeEvent('foo');
-    });
 
-    it('should become available to consumers', async () => {
       const events = await consumer.readEvents();
 
       expect(events[0].toString('utf8')).to.equal('foo');
