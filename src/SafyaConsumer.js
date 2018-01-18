@@ -1,11 +1,19 @@
 const crypto = require('crypto');
 const loglevel = require('loglevel');
-const storage = require('./storage');
+const s3 = require('./s3-storage');
 const Safya = require('./Safya');
 const { contentDigest } = require('./helpers');
 
+class PendingObjectError extends Error {
+  constructor(...args) {
+    super(...args)
+    this.message = 'An object is pending creation in this frame, please retry reading this frame.'
+    Error.captureStackTrace(this, PendingObject)
+  }
+}
+
 class SafyaConsumer {
-  constructor({bucket, name}) {
+  constructor({bucket, name, storage = s3}) {
     if (!bucket) {
       throw new Error('Parameter bucket is required');
     }
@@ -14,14 +22,15 @@ class SafyaConsumer {
       throw new Error('Parameter name is required');
     }
 
+    this.storage = storage
     this.bucket = bucket;
     this.name = name;
-    this.safya = new Safya({bucket});
+    this.safya = new Safya({bucket, storage});
   }
 
   async getHead() {
     try {
-      const obj = await storage.getObject({
+      const obj = await this.storage.getObject({
         Bucket: this.bucket,
         Key: `consumers/${this.name}`
       });
@@ -34,11 +43,11 @@ class SafyaConsumer {
     }
   }
 
-  async commitHead(head) {
-    await storage.putObject({
+  async commitHead(position) {
+    await this.storage.putObject({
       Bucket: this.bucket,
       Key: `consumers/${this.name}`,
-      Body: head
+      Body: position
     });
   }
 
@@ -47,17 +56,17 @@ class SafyaConsumer {
     let events = []
 
     while (true) {
-      const items = await storage.listObjects({
+      const { Contents } = await this.storage.listObjects({
         Bucket: this.bucket,
         Prefix: `events/${position}`
       });
 
-      if (items.Contents.length === 0) {
+      if (Contents.length === 0) {
         break;
       }
 
       const newEvents = await Promise.all(
-        items.Contents.filter((item) =>
+        Contents.filter((item) =>
           item.Key.split('/').pop() !== 'NEXT'
         ).map((item) => {
           return this.readEvent(item.Key);
@@ -77,11 +86,11 @@ class SafyaConsumer {
     return events;
   }
 
-  async getNext(head) {
+  async getNext(position) {
     try {
-      const next = await storage.getObject({
+      const next = await this.storage.getObject({
         Bucket: this.bucket,
-        Key: `events/${head}/NEXT`
+        Key: `events/${position}/NEXT`
       });
       return next.Body;
     } catch (err) {
@@ -99,7 +108,7 @@ class SafyaConsumer {
     try {
       return this.readS3Object({ key, digest });
     } catch (err) {
-      if (err.message === 'OBJECT_HASH_MISMATCH') {
+      if (err instanceof PendingObjectError) {
         // retry once to allow a current write to finish...
         return this.readS3Object({ key, digest });
       } else {
@@ -109,15 +118,15 @@ class SafyaConsumer {
   }
 
   async readS3Object({ key, digest }) {
-    const obj = await storage.getObject({
+    const obj = await this.storage.getObject({
       Bucket: this.bucket,
       Key: key
     });
 
     const md5 = contentDigest(obj.Body);
 
-    if (digest != md5) {
-      throw new Error('OBJECT_HASH_MISMATCH');
+    if (digest != md5 && obj.Body === 'PENDING') {
+      throw new PendingObjectError();
     } else {
       return obj.Body;
     }

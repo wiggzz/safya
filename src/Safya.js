@@ -1,11 +1,13 @@
 const crypto = require('crypto');
 const loglevel = require('loglevel');
-const storage = require('./storage');
+const bigInt = require('big-integer');
+const s3 = require('./s3-storage');
 const { contentDigest, nextHash } = require('./helpers');
 
 class Safya {
-  constructor({bucket}) {
+  constructor({bucket, storage = s3}) {
     this.bucket = bucket;
+    this.storage = storage;
   }
 
   async writeEvent(data) {
@@ -13,7 +15,7 @@ class Safya {
     const digest = contentDigest(data);
     const key = `events/${head}/${digest}`;
 
-    await storage.putObject({
+    await this.storage.putObject({
       Bucket: this.bucket,
       Key: key,
       Body: 'PENDING'
@@ -21,13 +23,13 @@ class Safya {
 
     const next = nextHash(head);
     await this.commitHead(next);
-    await storage.putObject({
+    await this.storage.putObject({
       Bucket: this.bucket,
       Key: `events/${head}/NEXT`,
       Body: next
     });
 
-    await storage.putObject({
+    await this.storage.putObject({
       Bucket: this.bucket,
       Key: key,
       Body: data
@@ -36,7 +38,7 @@ class Safya {
 
   async getHead() {
     try {
-      const obj = await storage.getObject({
+      const obj = await this.storage.getObject({
         Bucket: this.bucket,
         Key: `events/HEAD`
       });
@@ -53,7 +55,7 @@ class Safya {
   }
 
   async commitHead(head) {
-    await storage.putObject({
+    await this.storage.putObject({
       Bucket: this.bucket,
       Key: `events/HEAD`,
       Body: head
