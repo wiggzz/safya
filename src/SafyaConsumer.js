@@ -1,14 +1,50 @@
 const crypto = require('crypto');
-const loglevel = require('loglevel');
+const log = require('loglevel');
 const s3 = require('./s3-storage');
+const _ = require('lodash');
 const Safya = require('./Safya');
-const { contentDigest } = require('./helpers');
+const { contentDigest, Placeholder } = require('./helpers');
 
 class PendingObjectError extends Error {
   constructor(...args) {
     super(...args)
     this.message = 'An object is pending creation in this frame, please retry reading this frame.'
-    Error.captureStackTrace(this, PendingObject)
+    Error.captureStackTrace(this, PendingObjectError)
+  }
+}
+
+class ExpiredPendingObjectError extends Error {
+  constructor(...args) {
+    super(...args)
+    this.message = 'This object doesn\'t exist (it was never written as intended, due to an error).';
+    Error.captureStackTrace(this, ExpiredPendingObjectError);
+  }
+}
+
+class Pointer {
+  constructor(position, processed = []) {
+    this.position = position;
+    this.processed = processed;
+  }
+}
+
+class ProcessingState {
+  constructor(item, success) {
+    this.item = item;
+    this.success = success;
+  }
+}
+
+class ProcessingSuccess extends ProcessingState {
+  constructor(item) {
+    super(item, true);
+  }
+}
+
+class ProcessingFailure extends ProcessingState {
+  constructor(item, error) {
+    super(item, false);
+    this.error = error;
   }
 }
 
@@ -35,64 +71,108 @@ class SafyaConsumer {
         Key: `consumers/${this.name}`
       });
 
-      return obj.Body;
+      return JSON.parse(obj.Body.toString());
     } catch (err) {
       if (err.code === 'NoSuchKey') {
-        return this.safya.getTail();
+        return new Pointer(await this.safya.getTail());
       }
     }
   }
 
-  async commitHead(position) {
+  async commitHead(pointer) {
     await this.storage.putObject({
       Bucket: this.bucket,
       Key: `consumers/${this.name}`,
-      Body: position
+      Body: JSON.stringify(pointer)
     });
   }
 
-  async readEvents() {
-    let position = await this.getHead();
-    let events = []
+  async readEvents(processEvent, { maxConcurrency, maxRetries = 3, maxFrames } = {}) {
+    let pointer = await this.getHead();
 
-    while (true) {
+    log.debug('pointer', pointer);
+
+    const events = [];
+    const defaultProcessor = async (event) => {
+      events.push(event);
+    }
+    processEvent = processEvent || defaultProcessor;
+
+    const failureCounts = {};
+    let frameCount = 0;
+
+    while (!maxFrames || frameCount < maxFrames) {
+      frameCount++;
+
       const { Contents } = await this.storage.listObjects({
         Bucket: this.bucket,
-        Prefix: `events/${position}`
+        Prefix: `events/${pointer.position}`
       });
 
       if (Contents.length === 0) {
         break;
       }
 
-      const newEvents = await Promise.all(
-        Contents.filter((item) =>
-          item.Key.split('/').pop() !== 'NEXT'
-        ).map((item) => {
-          return this.readEvent(item.Key);
-        }));
+      const processingStates = await Promise.all(
+        Contents
+          .map(item => item.Key)
+          .filter(key =>
+            key.split('/').pop() !== 'NEXT' &&
+            !pointer.processed.includes(key)
+          )
+          .slice(0, maxConcurrency)
+          .map(async key => {
+            try {
+              const event = await this.readEvent(key);
 
-      events.push(newEvents);
+              await processEvent(event);
 
-      position = await this.getNext(position);
+              return new ProcessingSuccess(key);
+            } catch (err) {
+              if (err instanceof ExpiredPendingObjectError) {
+                return new ProcessingSuccess(key);
+              } else {
+                return new ProcessingFailure(key, err);
+              }
+            }
+          })
+      );
 
-      if (!position) {
+      processingStates.forEach(state => {
+        if (!state.success) {
+          failureCounts[state.item] = (failureCounts[state.item] || 0) + 1;
+          if (failureCounts[state.item] > maxRetries) {
+            throw new Error(`Maximum retries reached for processing item ${state.item}: ${state.error}`);
+          }
+        }
+      });
+
+      pointer = await this.getNext(pointer, processingStates);
+
+      if (!pointer) {
         throw new Error('Unexpected lack of next pointer with non-empty dataset.');
       }
-    }
 
-    await this.commitHead(position);
+      await this.commitHead(pointer);
+    }
 
     return events;
   }
 
-  async getNext(position) {
+  async getNext(pointer, processingStates) {
     try {
+      const successfulItems = processingStates.filter(s => s.success).map(s => s.item);
+
+      if (successfulItems.length !== processingStates.length) {
+        return new Pointer(pointer.position, successfulItems);
+      }
+
       const next = await this.storage.getObject({
         Bucket: this.bucket,
-        Key: `events/${position}/NEXT`
+        Key: `events/${pointer.position}/NEXT`
       });
-      return next.Body;
+
+      return new Pointer(next.Body.toString());
     } catch (err) {
       if (err.code === 'NoSuchKey') {
         return null;
@@ -105,16 +185,18 @@ class SafyaConsumer {
   async readEvent(key) {
     const digest = key.split('/').pop();
 
-    try {
-      return this.readS3Object({ key, digest });
-    } catch (err) {
-      if (err instanceof PendingObjectError) {
-        // retry once to allow a current write to finish...
-        return this.readS3Object({ key, digest });
-      } else {
-        throw err;
-      }
+    const readAndRetryPending = () => {
+      return this.readS3Object({ key, digest })
+        .catch(err => {
+          if (err instanceof PendingObjectError) {
+            readAndRetryPending()
+          } else {
+            throw err;
+          }
+        });
     }
+
+    return readAndRetryPending();
   }
 
   async readS3Object({ key, digest }) {
@@ -125,8 +207,13 @@ class SafyaConsumer {
 
     const md5 = contentDigest(obj.Body);
 
-    if (digest != md5 && obj.Body === 'PENDING') {
-      throw new PendingObjectError();
+    if (digest != md5) {
+      const placeholder = Placeholder.deserialize(obj.Body);
+      if (placeholder.isExpired()) {
+        throw new ExpiredPendingObjectError();
+      } else {
+        throw new PendingObjectError();
+      }
     } else {
       return obj.Body;
     }

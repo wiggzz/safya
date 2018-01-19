@@ -1,16 +1,19 @@
 const crypto = require('crypto');
 const loglevel = require('loglevel');
-const bigInt = require('big-integer');
 const s3 = require('./s3-storage');
-const { contentDigest, nextHash } = require('./helpers');
+const { contentDigest, nextHash, Placeholder } = require('./helpers');
 
 class Safya {
-  constructor({bucket, storage = s3}) {
+  constructor({bucket, storage = s3, estimatedMaximumWriteTimeMs = 2000}) {
     this.bucket = bucket;
     this.storage = storage;
+    this.estimatedMaximumWriteTimeMs = estimatedMaximumWriteTimeMs;
   }
 
   async writeEvent(data) {
+    if (!data instanceof String || !data instanceof Buffer) {
+      throw new Error('Event data must either be string or buffer');
+    }
     const head = await this.getHead();
     const digest = contentDigest(data);
     const key = `events/${head}/${digest}`;
@@ -18,16 +21,12 @@ class Safya {
     await this.storage.putObject({
       Bucket: this.bucket,
       Key: key,
-      Body: 'PENDING'
+      Body: new Placeholder(this.estimatedMaximumWriteTimeMs).serialize()
     });
 
     const next = nextHash(head);
     await this.commitHead(next);
-    await this.storage.putObject({
-      Bucket: this.bucket,
-      Key: `events/${head}/NEXT`,
-      Body: next
-    });
+    await this.commitNext(head, next);
 
     await this.storage.putObject({
       Bucket: this.bucket,
@@ -59,6 +58,14 @@ class Safya {
       Bucket: this.bucket,
       Key: `events/HEAD`,
       Body: head
+    });
+  }
+
+  async commitNext(current, next) {
+    await this.storage.putObject({
+      Bucket: this.bucket,
+      Key: `events/${current}/NEXT`,
+      Body: next
     });
   }
 
