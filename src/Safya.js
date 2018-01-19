@@ -33,6 +33,8 @@ class Safya {
       Key: key,
       Body: data
     });
+
+    return key;
   }
 
   async getHead() {
