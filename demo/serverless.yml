@@ -38,15 +38,16 @@ provider:
 
 functions:
   postEvent:
-    handler: dist/handler.postEvent
-
-#    The following are a few example events you can configure
-#    NOTE: Please make sure to change your handler code to work with those events
-#    Check the event documentation for details
+    handler: dist/safya-rest.postEvent
     events:
       - http:
           path: events
           method: post
+
+  handleEvent:
+    handler: dist/application.handleEvent
+    events:
+      - s3: safya
 #      - s3: ${env:BUCKET}
 #      - schedule: rate(10 minutes)
 #      - sns: greeter-topic
@@ -76,10 +77,16 @@ functions:
 # you can add CloudFormation resource templates here
 resources:
   Resources:
-    SafyaBucket:
+    S3BucketSafya:
       Type: AWS::S3::Bucket
       Properties:
         BucketName: safya-demo-bucket
+    EventHandlerLambdaPermissionSafyaS3:
+      Type: AWS::Lambda::Permission
+      Properties:
+        FunctionName:
+          Fn::GetAtt:
+            -
 #  Outputs:
 #     NewOutput:
 #       Description: "Description for the output"

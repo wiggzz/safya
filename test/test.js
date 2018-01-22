@@ -24,7 +24,7 @@ describe('end to end', () => {
       const events = await consumer.readEvents();
 
       expect(events[0].toString('utf8')).to.equal('foo');
-    });
+    }).timeout(20000);
 
     it('should not read the same event twice', async () => {
       await safya.writeEvent('blah');
@@ -33,7 +33,7 @@ describe('end to end', () => {
       const events = await consumer.readEvents();
 
       expect(events).to.be.empty;
-    });
+    }).timeout(20000);
 
     it('events that are written in order should stay in order when consumed', async () => {
       const thread = (threadId) => async () => {
@@ -56,7 +56,7 @@ describe('end to end', () => {
         expect(i).to.equal(expected);
         last[id] = expected;
       });
-    });
+    }).timeout(20000);
 
     it('should keep track of when the consumer fails to process an event and allow retrying', async () => {
       await safya.writeEvent('a');
@@ -75,6 +75,6 @@ describe('end to end', () => {
       });
 
       expect(string).to.equal('abc');
-    });
+    }).timeout(20000);
   });
 });

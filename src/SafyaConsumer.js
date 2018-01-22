@@ -106,7 +106,7 @@ class SafyaConsumer {
 
       const { Contents } = await this.storage.listObjects({
         Bucket: this.bucket,
-        Prefix: `events/${pointer.position}`
+        Prefix: `events/${pointer.position}/`
       });
 
       if (Contents.length === 0) {
@@ -117,7 +117,6 @@ class SafyaConsumer {
         Contents
           .map(item => item.Key)
           .filter(key =>
-            key.split('/').pop() !== 'NEXT' &&
             !pointer.processed.includes(key)
           )
           .slice(0, maxConcurrency)
@@ -169,7 +168,7 @@ class SafyaConsumer {
 
       const next = await this.storage.getObject({
         Bucket: this.bucket,
-        Key: `events/${pointer.position}/NEXT`
+        Key: `events/${pointer.position}.NEXT`
       });
 
       return new Pointer(next.Body.toString());

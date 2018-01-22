@@ -66,7 +66,7 @@ class Safya {
   async commitNext(current, next) {
     await this.storage.putObject({
       Bucket: this.bucket,
-      Key: `events/${current}/NEXT`,
+      Key: `events/${current}.NEXT`,
       Body: next
     });
   }
