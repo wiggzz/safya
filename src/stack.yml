@@ -1,0 +1,30 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Safya unified log stack
+Resources:
+  PartitionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: partitionId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: partitionId
+          KeyType: HASH
+    ProvisionedThroughput:
+      ReadCapacityUnits: 5
+      WriteCapacityUnits: 5
+  ConsumersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: partitionId
+          AttributeType: S
+        - AttributeName: consumerId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: partitionId
+          KeyType: HASH
+        - AttributeName: consumerId
+          KeyType: RANGE
+  EventsBucket:
+    Type: AWS::S3::Bucket

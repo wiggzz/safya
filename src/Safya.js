@@ -1,32 +1,26 @@
 const crypto = require('crypto');
 const loglevel = require('loglevel');
 const s3 = require('./s3-storage');
+const dynamoDb = require('./dynamodb');
 const { contentDigest, nextHash, Placeholder } = require('./helpers');
 
 class Safya {
-  constructor({bucket, storage = s3, estimatedMaximumWriteTimeMs = 2000}) {
+  constructor({ bucket, partitionsTable, storage = s3 }) {
     this.bucket = bucket;
     this.storage = storage;
-    this.estimatedMaximumWriteTimeMs = estimatedMaximumWriteTimeMs;
+    this.partitionsTable = partitionsTable;
   }
 
-  async writeEvent(data) {
+  async writeEvent(partitionKey, data) {
     if (!data instanceof String || !data instanceof Buffer) {
       throw new Error('Event data must either be string or buffer');
     }
-    const head = await this.getHead();
-    const digest = contentDigest(data);
-    const key = `events/${head}/${digest}`;
 
-    await this.storage.putObject({
-      Bucket: this.bucket,
-      Key: key,
-      Body: new Placeholder(this.estimatedMaximumWriteTimeMs).serialize()
-    });
+    const partitionId = 'dummy'; // 1 partition for now
 
-    const next = nextHash(head);
-    await this.commitHead(next);
-    await this.commitNext(head, next);
+    const sequenceNumber = await this.reserveSequenceNumber({ partitionId });
+
+    const key = `events/${partitionId}/${sequenceNumber}`;
 
     await this.storage.putObject({
       Bucket: this.bucket,
@@ -37,42 +31,55 @@ class Safya {
     return key;
   }
 
-  async getHead() {
+  async reserveSequenceNumber({ partitionId, retries = 3 }) {
     try {
-      const obj = await this.storage.getObject({
-        Bucket: this.bucket,
-        Key: `events/HEAD`
-      });
-
-      return obj.Body;
+      const sequenceNumber = await this.getSequenceNumber({ partitionId });
+      await this.incrementSequenceNumber({ partitionId, sequenceNumber });
+      return sequenceNumber;
     } catch (err) {
-      if (err.code === 'NoSuchKey') {
-        return this.getTail();
+      if (err.code === 'ConditionalCheckFailedException') {
+        if (retries > 0) {
+          return this.reserveSequenceNumber({ partitionId, retries: retries - 1 });
+        } else {
+          throw new Error('Unable to obtain a sequence number, maximum retries reached');
+        }
       } else {
-        loglevel.error(err);
         throw err;
       }
     }
   }
 
-  async commitHead(head) {
-    await this.storage.putObject({
-      Bucket: this.bucket,
-      Key: `events/HEAD`,
-      Body: head
-    });
+  async getSequenceNumber({ partitionId }) {
+    const params = {
+      TableName: this.partitionsTable,
+      Key: {
+        partitionId
+      }
+    };
+
+    const { Item } = await dynamoDb.get(params);
+
+    if (Item) {
+      return Item.sequenceNumber;
+    }
+
+    return 0;
   }
 
-  async commitNext(current, next) {
-    await this.storage.putObject({
-      Bucket: this.bucket,
-      Key: `events/${current}.NEXT`,
-      Body: next
-    });
-  }
+  async incrementSequenceNumber({ partitionId, sequenceNumber }) {
+    const params = {
+      TableName: this.partitionsTable,
+      Key: {
+        partitionId
+      },
+      UpdateExpression: 'set sequenceNumber = sequenceNumber + 1',
+      ConditionExpression: 'sequenceNumber = :CURRENT',
+      ExpressionAttributeValues: {
+        ':CURRENT': sequenceNumber
+      }
+    }
 
-  async getTail() {
-    return nextHash(this.bucket);
+    await dynamoDb.update(params);
   }
 }
 

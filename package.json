@@ -7,12 +7,14 @@
   "author": "Will James",
   "dependencies": {
     "aws-sdk": "^2.183.0",
+    "bluebird": "^3.5.1",
     "lodash": "^4.17.4",
     "loglevel": "^1.6.1"
   },
   "devDependencies": {
     "chai": "^4.1.2",
-    "mocha": "^4.1.0"
+    "mocha": "^4.1.0",
+    "sinon": "^4.2.0"
   },
   "scripts": {
     "test": "mocha"
