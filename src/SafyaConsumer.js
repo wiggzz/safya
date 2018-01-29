@@ -9,7 +9,7 @@ const { contentDigest } = require('./helpers');
 class SafyaConsumer {
   constructor({eventsBucket, partitionsTable, consumersTable, name, storage = s3}) {
     if (!eventsBucket) {
-      throw new Error('Parameter bucket is required');
+      throw new Error('Parameter eventsBucket is required');
     }
 
     if (!name) {
@@ -21,7 +21,7 @@ class SafyaConsumer {
     this.consumerName = name;
     this.partitionTable = partitionsTable;
     this.consumersTable = consumersTable;
-    this.safya = new Safya({bucket, partitionsTable, storage});
+    this.safya = new Safya({ eventsBucket, partitionsTable, storage });
   }
 
   async getSequenceNumber({ partitionId }) {
@@ -29,13 +29,13 @@ class SafyaConsumer {
       TableName: this.consumersTable,
       Key: {
         partitionId,
-        consumerId: this.consumerId
+        consumerId: this.consumerName
       }
     };
 
-    const { Item } = await dynamoDb.get(params);
+    const { Item } = await dynamoDb.getAsync(params);
 
-    if (Item) {
+    if (Item && Item.sequenceNumber) {
       return Item.sequenceNumber;
     }
 
@@ -47,16 +47,24 @@ class SafyaConsumer {
       TableName: this.consumersTable,
       Item: {
         partitionId,
-        consumerId: this.consumerId,
+        consumerId: this.consumerName,
         sequenceNumber
       }
     }
 
-    await dynamoDb.put(params);
+    await dynamoDb.putAsync(params);
   }
 
-  async readEvent({ partitionId, eventProcessor } = {}) {
-    let sequenceNumber = await this.getSequenceNumber({ partitionId });
+  async initializeSequenceNumber({ partitionId, sequenceNumber }) {
+    const params = {
+      TableName: this.consumersTable,
+      Item: {}
+    }
+  }
+
+  async readEvents({ partitionId, eventProcessor, count = 20 } = {}) {
+    const sequenceNumber = await this.getSequenceNumber({ partitionId });
+    // TODO - record that we are active on this partition
 
     log.debug('sequence number', sequenceNumber);
 
@@ -66,19 +74,48 @@ class SafyaConsumer {
     }
     const processEvent = eventProcessor || defaultProcessor;
 
-    const event = await this.readEvent({ partitionId, sequenceNumber });
+    let step;
+    for (step = 0; step < count; step++) {
+      const shouldContinue = await this.readOnce({
+        partitionId,
+        sequenceNumber: sequenceNumber + step,
+        processEvent
+      });
 
-    await processEvent(event);
+      if (!shouldContinue) { break; }
+    }
 
-    await this.setSequenceNumber({ partitionId, sequenceNumber});
+    await this.setSequenceNumber({ partitionId, sequenceNumber: sequenceNumber + step});
 
     return events;
   }
 
-  async readEvent({ partitionId, sequenceNumber }) {
-    const key = `/events/${partitionId}/${sequenceNumber}`;
+  async readOnce({ partitionId, sequenceNumber, retries = 3, processEvent }) {
+    try {
+      const event = await this.readEventFromS3({ partitionId, sequenceNumber });
 
-    const obj = await this.storage.getObject({
+      await processEvent(event);
+
+      return true;
+    } catch (err) {
+      if (err.code === 'NoSuchKey') {
+        return false;
+      } else {
+        log.debug(err);
+        if (retries > 0) {
+          return this.readOnce({ partitionId, sequenceNumber, retries: retries - 1, processEvent });
+        } else {
+          throw err;
+        }
+      }
+    }
+  }
+
+  async readEventFromS3({ partitionId, sequenceNumber }) {
+    const key = `events/${partitionId}/${sequenceNumber}`;
+
+    log.debug('s3 get object', key, 'from bucket', this.bucket);
+    const obj = await this.storage.getObjectAsync({
       Bucket: this.bucket,
       Key: key
     });

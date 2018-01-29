@@ -10,9 +10,9 @@ Resources:
       KeySchema:
         - AttributeName: partitionId
           KeyType: HASH
-    ProvisionedThroughput:
-      ReadCapacityUnits: 5
-      WriteCapacityUnits: 5
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
   ConsumersTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -26,5 +26,8 @@ Resources:
           KeyType: HASH
         - AttributeName: consumerId
           KeyType: RANGE
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
   EventsBucket:
     Type: AWS::S3::Bucket
