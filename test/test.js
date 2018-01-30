@@ -84,28 +84,5 @@ describe('end to end', function () {
         count: 60
       });
     });
-
-    it('should keep track of when the consumer fails to process an event and allow retrying', async () => {
-      await safya.writeEvent('id-12345', 'a');
-      await safya.writeEvent('id-12345', 'b');
-      await safya.writeEvent('id-12345', 'c');
-
-      let string = '';
-      let error = true;
-
-      const [ partitionId ] = await consumer.getPartitionIds();
-      await consumer.readEvents({
-        partitionId,
-        eventProcessor: event => {
-          if (error) {
-            error = false;
-            throw new Error('random error');
-          }
-          string = string + event;
-        }
-      });
-
-      expect(string).to.equal('abc');
-    });
   });
 });
