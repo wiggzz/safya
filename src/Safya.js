@@ -2,13 +2,18 @@ const crypto = require('crypto');
 const log = require('loglevel');
 const s3 = require('./s3-storage');
 const dynamoDb = require('./dynamodb');
-const { contentDigest, nextHash, Placeholder } = require('./helpers');
+const Partitioner = require('./Partitioner');
+const { contentDigest, retryOnFailure } = require('./helpers');
+
+const PARTITIONER_KEY = 'meta_partitioner';
 
 class Safya {
-  constructor({ eventsBucket, partitionsTable, storage = s3 }) {
+  constructor({ eventsBucket, partitionsTable, storage = s3, preferredPartitioner = new Partitioner() }) {
     this.bucket = eventsBucket;
     this.storage = storage;
     this.partitionsTable = partitionsTable;
+    this.preferredPartitioner = preferredPartitioner;
+    this.partitioner = null;
   }
 
   async writeEvent(partitionKey, data) {
@@ -16,7 +21,7 @@ class Safya {
       throw new Error('Event data must either be string or buffer');
     }
 
-    const partitionId = 'dummy'; // 1 partition for now
+    const partitionId = await this.getPartitionId({ partitionKey });
 
     const sequenceNumber = await this.reserveSequenceNumber({ partitionId });
 
@@ -31,23 +36,27 @@ class Safya {
     return key;
   }
 
-  async reserveSequenceNumber({ partitionId, retries = 10 }) {
-    try {
+  async getPartitionId({ partitionKey }) {
+    return retryOnFailure(async () => {
+      const partitioner = await this.getPartitioner();
+      return partitioner.partitionIdForKey(partitionKey);
+    }, {
+      retries: 10,
+      predicate: (err) => err.code === 'ConditionalCheckFailedException',
+      messageOnFailure: 'Unable to obtain partition id, maximum retries reached'
+    });
+  }
+
+  async reserveSequenceNumber({ partitionId }) {
+    return retryOnFailure(async () => {
       const sequenceNumber = await this.getSequenceNumber({ partitionId });
       await this.incrementSequenceNumber({ partitionId, sequenceNumber });
-      return sequenceNumber || 0;
-    } catch (err) {
-      log.debug(err);
-      if (err.code === 'ConditionalCheckFailedException') {
-        if (retries > 0) {
-          return this.reserveSequenceNumber({ partitionId, retries: retries - 1 });
-        } else {
-          throw new Error('Unable to obtain a sequence number, maximum retries reached');
-        }
-      } else {
-        throw err;
-      }
-    }
+      return sequenceNumber;
+    }, {
+      retries: 10,
+      predicate: (err) => err.code === 'ConditionalCheckFailedException',
+      messageOnFailure: 'Unable to obtain a sequence number, maximum retries reached'
+    });
   }
 
   async getSequenceNumber({ partitionId }) {
@@ -64,46 +73,83 @@ class Safya {
 
     if (Item) {
       return Item.sequenceNumber;
+    } else {
+      return this.initializeSequenceNumber({ partitionId });
     }
-
-    return undefined;
   }
 
   async incrementSequenceNumber({ partitionId, sequenceNumber }) {
-    if (sequenceNumber !== undefined) {
-      const params = {
-        TableName: this.partitionsTable,
-        Key: {
-          partitionId
-        },
-        UpdateExpression: 'set sequenceNumber = sequenceNumber + :ONE',
-        ConditionExpression: 'sequenceNumber = :CURRENT',
-        ExpressionAttributeValues: {
-          ':CURRENT': sequenceNumber,
-          ':ONE': 1
-        }
-      }
-      log.debug('update params', params);
-
-      await dynamoDb.updateAsync(params);
-    } else {
-      await this.initializeSequenceNumber({ partitionId });
-    }
-  }
-
-  async initializeSequenceNumber({ partitionId }) {
     const params = {
       TableName: this.partitionsTable,
       Key: {
         partitionId
       },
+      UpdateExpression: 'set sequenceNumber = sequenceNumber + :ONE',
+      ConditionExpression: 'sequenceNumber = :CURRENT',
+      ExpressionAttributeValues: {
+        ':CURRENT': sequenceNumber,
+        ':ONE': 1
+      }
+    }
+    log.debug('update params', params);
+
+    await dynamoDb.updateAsync(params);
+  }
+
+  async initializeSequenceNumber({ partitionId }) {
+    const sequenceNumber = 0;
+
+    const params = {
+      TableName: this.partitionsTable,
       ConditionExpression: 'attribute_not_exists(partitionId)',
       Item: {
         partitionId,
-        sequenceNumber: 0
+        sequenceNumber
       }
     };
     await dynamoDb.putAsync(params);
+
+    return sequenceNumber;
+  }
+
+  async getPartitioner() {
+    if (this.partitioner) {
+      return this.partitioner;
+    }
+
+    const params = {
+      TableName: this.partitionsTable,
+      Key: {
+        partitionId: PARTITIONER_KEY
+      }
+    };
+
+    const { Item } = await dynamoDb.getAsync(params);
+
+    if (Item) {
+      this.partitioner = Partitioner.fromString(Item.partitioner);
+    } else {
+      this.partitioner = await this.initializePartitioner();
+    }
+
+    return this.partitioner;
+  }
+
+  async initializePartitioner() {
+    const partitioner = this.preferredPartitioner;
+
+    const params = {
+      TableName: this.partitionsTable,
+      ConditionExpression: 'attribute_not_exists(partitionId)',
+      Item: {
+        partitionId: PARTITIONER_KEY,
+        partitioner: partitioner.toString()
+      }
+    };
+
+    await dynamoDb.putAsync(params);
+
+    return partitioner;
   }
 }
 

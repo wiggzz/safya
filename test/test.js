@@ -31,11 +31,18 @@ describe('end to end', function () {
     });
   });
 
+  after(async () => {
+    const [ partitionId ] = await consumer.getPartitionIds();
+    await consumer.readEvents({ partitionId });
+  });
+
   describe('the consumer', () => {
     it('should be able to read events after they are produced', async () => {
       await safya.writeEvent('id-12345', 'foo');
 
-      const events = await consumer.readEvents({ partitionId: 'dummy' });
+      const [ partitionId ] = await consumer.getPartitionIds();
+
+      const events = await consumer.readEvents({ partitionId });
 
       expect(events[0].toString('utf8')).to.equal('foo');
     });
@@ -43,8 +50,9 @@ describe('end to end', function () {
     it('should not read the same event twice', async () => {
       await safya.writeEvent('id-12345', 'blah');
 
-      await consumer.readEvents({ partitionId: 'dummy' });
-      const events = await consumer.readEvents({ partitionId: 'dummy' });
+      const [ partitionId ] = await consumer.getPartitionIds();
+      await consumer.readEvents({ partitionId });
+      const events = await consumer.readEvents({ partitionId });
 
       expect(events).to.be.empty;
     });
@@ -64,8 +72,9 @@ describe('end to end', function () {
         thread('3')()
       ]);
 
+      const [ partitionId ] = await consumer.getPartitionIds();
       await consumer.readEvents({
-        partitionId: 'dummy',
+        partitionId,
         eventProcessor: event => {
           const { id, i } = JSON.parse(event);
           const expected = (last[id] || 0) + 1;
@@ -84,8 +93,9 @@ describe('end to end', function () {
       let string = '';
       let error = true;
 
+      const [ partitionId ] = await consumer.getPartitionIds();
       await consumer.readEvents({
-        partitionId: 'dummy',
+        partitionId,
         eventProcessor: event => {
           if (error) {
             error = false;

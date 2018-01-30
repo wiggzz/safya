@@ -17,9 +17,9 @@ Resources:
     Type: AWS::DynamoDB::Table
     Properties:
       AttributeDefinitions:
-        - AttributeName: partitionId
-          AttributeType: S
         - AttributeName: consumerId
+          AttributeType: S
+        - AttributeName: partitionId
           AttributeType: S
       KeySchema:
         - AttributeName: partitionId

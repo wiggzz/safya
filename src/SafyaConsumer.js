@@ -7,7 +7,7 @@ const Safya = require('./Safya');
 const { contentDigest } = require('./helpers');
 
 class SafyaConsumer {
-  constructor({eventsBucket, partitionsTable, consumersTable, name, storage = s3}) {
+  constructor({ eventsBucket, partitionsTable, consumersTable, name, storage = s3 }) {
     if (!eventsBucket) {
       throw new Error('Parameter eventsBucket is required');
     }
@@ -24,12 +24,18 @@ class SafyaConsumer {
     this.safya = new Safya({ eventsBucket, partitionsTable, storage });
   }
 
+  async getPartitionIds() {
+    const partitioner = await this.safya.getPartitioner();
+
+    return partitioner.getPartitionIds();
+  }
+
   async getSequenceNumber({ partitionId }) {
     const params = {
       TableName: this.consumersTable,
       Key: {
-        partitionId,
-        consumerId: this.consumerName
+        consumerId: this.consumerName,
+        partitionId
       }
     };
 
@@ -46,20 +52,13 @@ class SafyaConsumer {
     const params = {
       TableName: this.consumersTable,
       Item: {
-        partitionId,
         consumerId: this.consumerName,
+        partitionId,
         sequenceNumber
       }
     }
 
     await dynamoDb.putAsync(params);
-  }
-
-  async initializeSequenceNumber({ partitionId, sequenceNumber }) {
-    const params = {
-      TableName: this.consumersTable,
-      Item: {}
-    }
   }
 
   async readEvents({ partitionId, eventProcessor, count = 20 } = {}) {
@@ -99,6 +98,7 @@ class SafyaConsumer {
       return true;
     } catch (err) {
       if (err.code === 'NoSuchKey') {
+        log.debug(`seq. no. ${sequenceNumber} doesn\'t exist yet`);
         return false;
       } else {
         log.debug(err);
