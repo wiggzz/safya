@@ -1,11 +1,9 @@
 const expect = require('chai').expect;
 const sinon = require('sinon');
+const testInfra = require('./test-infra');
 const { Safya, SafyaConsumer } = require('../src');
 const log = require('loglevel');
-const testInfra = require('./test-infra');
 log.setLevel('debug');
-
-const STORAGE = undefined;//memoryStorage;
 
 describe('end to end', function () {
   this.timeout(100000);
@@ -14,20 +12,18 @@ describe('end to end', function () {
   let consumer, safya;
 
   before(async () => {
-    ({ eventsBucket, partitionsTable, consumersTable } = await testInfra.deploy());
+    ({ eventsBucket, partitionsTable, consumersTable } = await testInfra.deployE2EStack());
 
     safya = new Safya({
       eventsBucket,
-      partitionsTable,
-      storage: STORAGE
+      partitionsTable
     });
 
     consumer = new SafyaConsumer({
       name: 'test-consumer',
       eventsBucket,
       consumersTable,
-      partitionsTable,
-      storage: STORAGE
+      partitionsTable
     });
   });
 

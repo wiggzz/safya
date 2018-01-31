@@ -8,12 +8,15 @@ const { contentDigest, retryOnFailure } = require('./helpers');
 const PARTITIONER_KEY = 'meta_partitioner';
 
 class Safya {
-  constructor({ eventsBucket, partitionsTable, storage = s3, preferredPartitioner = new Partitioner() }) {
+  constructor({ eventsBucket, partitionsTable, storage = s3, preferredPartitioner }) {
     this.bucket = eventsBucket;
     this.storage = storage;
     this.partitionsTable = partitionsTable;
     this.preferredPartitioner = preferredPartitioner;
     this.partitioner = null;
+    this.stats = {
+      consistencyFailures: 0
+    };
   }
 
   async writeEvent(partitionKey, data) {
@@ -68,8 +71,6 @@ class Safya {
     };
 
     const { Item } = await dynamoDb.getAsync(params);
-
-    console.log('partition info', Item);
 
     if (Item) {
       return Item.sequenceNumber;
@@ -128,6 +129,10 @@ class Safya {
 
     if (Item) {
       this.partitioner = Partitioner.fromString(Item.partitioner);
+
+      if (!this.preferredPartitioner || !this.partitioner.isEquivalentTo(this.preferredPartitioner)) {
+        log.warn('The partitioner currently installed in your Safya stack is not the same as your specified preferred partitioner.')
+      }
     } else {
       this.partitioner = await this.initializePartitioner();
     }
@@ -136,6 +141,11 @@ class Safya {
   }
 
   async initializePartitioner() {
+    if (!this.preferredPartitioner) {
+      log.warn('You did not specify a partitioner, so we will use a default partitioner.');
+      this.preferredPartitioner = new Partitioner();
+    }
+
     const partitioner = this.preferredPartitioner;
 
     const params = {

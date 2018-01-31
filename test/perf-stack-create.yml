@@ -1,0 +1,11 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Stack for performance testing Safya
+Resources:
+  DeploymentBucket:
+    Type: AWS::S3::Bucket
+Outputs:
+  DeploymentBucketName:
+    Description: Deployment bucket name
+    Value:
+      Ref: DeploymentBucket
+

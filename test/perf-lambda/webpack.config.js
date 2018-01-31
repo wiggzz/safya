@@ -1,10 +1,10 @@
 const path = require('path');
 
-const defaultConfig = (filename) => ({
-  entry: filename,
+module.exports = {
+  entry: path.resolve(__dirname, 'src', 'handler.js'),
   output: {
     path: path.resolve(__dirname, 'dist'),
-    filename: filename,
+    filename: 'handler.js',
     libraryTarget: 'commonjs2'
   },
   module: {
@@ -24,9 +24,4 @@ const defaultConfig = (filename) => ({
     ]
   },
   target: 'node'
-})
-
-module.exports = [
-  defaultConfig('application.js'),
-  defaultConfig('safya-rest.js')
-]
+};

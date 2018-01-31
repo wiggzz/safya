@@ -29,5 +29,153 @@ Resources:
       ProvisionedThroughput:
         ReadCapacityUnits: 5
         WriteCapacityUnits: 5
+  PartitionsReadAutoScalingTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 200
+      MinCapacity: 5
+      ScalableDimension: dynamodb:table:ReadCapacityUnits
+      RoleARN:
+        Fn::GetAtt: [AutoScalingRole, Arn]
+      ResourceId:
+        Fn::Join:
+          - /
+          - - table
+            - Ref: PartitionsTable
+      ServiceNamespace: dynamodb
+  PartitionsReadAutoScalingPolicy:
+    Type: "AWS::ApplicationAutoScaling::ScalingPolicy"
+    Properties:
+      PolicyName: PartitionsReadAutoScalingPolicy
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId:
+        Ref: PartitionsReadAutoScalingTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70.0
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBReadCapacityUtilization
+  PartitionsWriteAutoScalingTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 200
+      MinCapacity: 5
+      ScalableDimension: dynamodb:table:WriteCapacityUnits
+      RoleARN:
+        Fn::GetAtt: [AutoScalingRole, Arn]
+      ResourceId:
+        Fn::Join:
+          - /
+          - - table
+            - Ref: PartitionsTable
+      ServiceNamespace: dynamodb
+  PartitionsWriteAutoScalingPolicy:
+    Type: "AWS::ApplicationAutoScaling::ScalingPolicy"
+    Properties:
+      PolicyName: PartitionsWriteAutoScalingPolicy
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId:
+        Ref: PartitionsWriteAutoScalingTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70.0
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBWriteCapacityUtilization
+  ConsumersReadAutoScalingTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 200
+      MinCapacity: 5
+      ScalableDimension: dynamodb:table:ReadCapacityUnits
+      RoleARN:
+        Fn::GetAtt: [AutoScalingRole, Arn]
+      ResourceId:
+        Fn::Join:
+          - /
+          - - table
+            - Ref: ConsumersTable
+      ServiceNamespace: dynamodb
+  ConsumersReadAutoScalingPolicy:
+    Type: "AWS::ApplicationAutoScaling::ScalingPolicy"
+    Properties:
+      PolicyName: ConsumersReadAutoScalingPolicy
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId:
+        Ref: ConsumersReadAutoScalingTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70.0
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBReadCapacityUtilization
+  ConsumersWriteAutoScalingTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 200
+      MinCapacity: 5
+      ScalableDimension: dynamodb:table:WriteCapacityUnits
+      RoleARN:
+        Fn::GetAtt: [AutoScalingRole, Arn]
+      ResourceId:
+        Fn::Join:
+          - /
+          - - table
+            - Ref: ConsumersTable
+      ServiceNamespace: dynamodb
+  ConsumersWriteAutoScalingPolicy:
+    Type: "AWS::ApplicationAutoScaling::ScalingPolicy"
+    Properties:
+      PolicyName: ConsumersWriteAutoScalingPolicy
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId:
+        Ref: ConsumersWriteAutoScalingTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70.0
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBWriteCapacityUtilization
+  AutoScalingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - application-autoscaling.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: PerformanceTestLambda
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:DescribeTable
+                  - dynamodb:UpdateTable
+                  - cloudwatch:PutMetricAlarm
+                  - cloudwatch:DescribeAlarms
+                  - cloudwatch:GetMetricStatistics
+                  - cloudwatch:SetAlarmState
+                  - cloudwatch:DeleteAlarms
+                Resource: '*'
   EventsBucket:
     Type: AWS::S3::Bucket
+Outputs:
+  PartitionsTableName:
+    Description: Partitions table name
+    Value:
+      Ref: PartitionsTable
+  ConsumersTableName:
+    Description: Consumers table name
+    Value:
+      Ref: ConsumersTable
+  EventsBucketName:
+    Description: Events bucket name
+    Value:
+      Ref: EventsBucket

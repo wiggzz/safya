@@ -1,0 +1,121 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Stack for performance testing Safya
+Parameters:
+  LambdaPackageS3Key:
+    Type: String
+    Description: Key for the lambda package
+Resources:
+  DeploymentBucket:
+    Type: AWS::S3::Bucket
+  SafyaStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL:
+        Fn::Join:
+          - ''
+          - - 'https://s3.amazonaws.com/'
+            - Ref: DeploymentBucket
+            - '/safya-perf-stack.yml'
+  PerformanceTestFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket:
+          Ref: DeploymentBucket
+        S3Key:
+          Ref: LambdaPackageS3Key
+      Environment:
+        Variables:
+          EVENTS_BUCKET:
+            Fn::GetAtt: [SafyaStack, Outputs.EventsBucketName]
+          PARTITIONS_TABLE:
+            Fn::GetAtt: [SafyaStack, Outputs.PartitionsTableName]
+          CONSUMERS_TABLE:
+            Fn::GetAtt: [SafyaStack, Outputs.ConsumersTableName]
+      Handler: handler.performanceTestThread
+      Role:
+        Fn::GetAtt: [PerformanceTestFunctionRole, Arn]
+      Runtime: nodejs6.10
+      Timeout: 300
+      MemorySize: 1024
+  PerformanceTestFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: PerformanceTestLambda
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:CreateLogGroup
+                  - logs:PutLogEvents
+                Resource: '*'
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource:
+                  Fn::Join:
+                    - ''
+                    - - 'arn:aws:s3:::'
+                      - Fn::GetAtt: [SafyaStack, Outputs.EventsBucketName]
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                Resource:
+                  Fn::Join:
+                    - ''
+                    - - 'arn:aws:s3:::'
+                      - Fn::GetAtt: [SafyaStack, Outputs.EventsBucketName]
+                      - '/*'
+              - Effect: Allow
+                Action: 'dynamodb:*'
+                Resource:
+                  - Fn::Join:
+                    - ''
+                    - - 'arn:aws:dynamodb:'
+                      - Ref: AWS::Region
+                      - ':'
+                      - Ref: AWS::AccountId
+                      - ':table/'
+                      - Fn::GetAtt: [SafyaStack, Outputs.PartitionsTableName]
+                  - Fn::Join:
+                    - ''
+                    - - 'arn:aws:dynamodb:'
+                      - Ref: AWS::Region
+                      - ':'
+                      - Ref: AWS::AccountId
+                      - ':table/'
+                      - Fn::GetAtt: [SafyaStack, Outputs.ConsumersTableName]
+Outputs:
+  DeploymentBucketName:
+    Description: Deployment bucket name
+    Value:
+      Ref: DeploymentBucket
+  PartitionsTableName:
+    Description: Partitions table name
+    Value:
+      Fn::GetAtt: [SafyaStack, Outputs.PartitionsTableName]
+  ConsumersTableName:
+    Description: Consumers table name
+    Value:
+      Fn::GetAtt: [SafyaStack, Outputs.ConsumersTableName]
+  EventsBucketName:
+    Description: Events bucket name
+    Value:
+      Fn::GetAtt: [SafyaStack, Outputs.EventsBucketName]
+  PerformanceTestFunctionName:
+    Description: Performance test function name
+    Value:
+      Ref: PerformanceTestFunction
+

@@ -13,7 +13,7 @@ const retryOnFailure = async (fn, { retries = 10, predicate = (err) => true, mes
   } catch (err) {
     if (predicate(err)) {
       if (retries > 0) {
-        return await retryOnFailure(fn, { retries: retries - 1, predicate });
+        return await retryOnFailure(fn, { retries: retries - 1, predicate, messageOnFailure });
       } else {
         throw new Error(messageOnFailure);
       }
