@@ -102,5 +102,32 @@ describe('end to end', function () {
       expect(events).to.have.lengthOf(1);
       expect(events[0].toString('utf8')).to.equal('bingo success');
     });
+
+    it('should only allow one consumer thread to read from each partition at a time', async () => {
+      for (let i = 0; i < 5; i++) {
+        await safya.writeEvent('id-12345', 'dinosaur');
+      }
+
+      const consumer2 = new SafyaConsumer({
+        name: 'test-consumer',
+        eventsBucket,
+        consumersTable,
+        partitionsTable
+      });
+
+      const [ partitionId ] = await consumer.getPartitionIds();
+      const [ events1, events2 ] = await Promise.all([
+        consumer.readEvents({ partitionId }),
+        consumer2.readEvents({ partitionId })
+      ]);
+
+      if (events1.length > 0) {
+        expect(events1).to.have.lengthOf(5);
+        expect(events2).to.have.lengthOf(0);
+      } else {
+        expect(events2).to.have.lengthOf(5);
+        expect(events1).to.have.lengthOf(0);
+      }
+    });
   });
 });

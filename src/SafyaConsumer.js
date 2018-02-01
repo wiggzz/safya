@@ -7,7 +7,7 @@ const Safya = require('./Safya');
 const { contentDigest } = require('./helpers');
 
 class SafyaConsumer {
-  constructor({ eventsBucket, partitionsTable, consumersTable, name, storage = s3 }) {
+  constructor({ eventsBucket, partitionsTable, consumersTable, name, storage = s3, lastActiveExpirationMs = 5000 } = {}) {
     if (!eventsBucket) {
       throw new Error('Parameter eventsBucket is required');
     }
@@ -21,7 +21,9 @@ class SafyaConsumer {
     this.consumerName = name;
     this.partitionTable = partitionsTable;
     this.consumersTable = consumersTable;
+    this.lastActiveExpirationMs = lastActiveExpirationMs;
     this.safya = new Safya({ eventsBucket, partitionsTable, storage });
+    this.threadId = crypto.randomBytes(32).toString('hex');
   }
 
   async getPartitionIds() {
@@ -51,42 +53,125 @@ class SafyaConsumer {
   async setSequenceNumber({ partitionId, sequenceNumber }) {
     const params = {
       TableName: this.consumersTable,
-      Item: {
+      Key: {
         consumerId: this.consumerName,
-        partitionId,
-        sequenceNumber
+        partitionId
+      },
+      UpdateExpression: 'SET sequenceNumber = :sequenceNumber, activeExpiration = :activeExpiration',
+      ConditionExpression: 'activeThreadId = :threadId',
+      ExpressionAttributeValues: {
+        ':activeExpiration': Date.now() + this.lastActiveExpirationMs,
+        ':sequenceNumber': sequenceNumber,
+        ':threadId': this.threadId
       }
     }
 
-    await dynamoDb.putAsync(params);
+    await dynamoDb.updateAsync(params);
   }
 
   async readEvents({ partitionId, eventProcessor, count = 20 } = {}) {
-    const sequenceNumber = await this.getSequenceNumber({ partitionId });
-    // TODO - record that we are active on this partition
+    // i hate exception handling in javascript.
+    try {
+      return await this.withConsumerLock({ partitionId }, async () => {
+        const sequenceNumber = await this.getSequenceNumber({ partitionId });
 
-    log.debug('sequence number', sequenceNumber);
+        log.debug('sequence number', sequenceNumber);
 
-    const events = [];
-    const defaultProcessor = async (event) => {
-      events.push(event);
-    }
-    const processEvent = eventProcessor || defaultProcessor;
+        const events = [];
+        const defaultProcessor = async (event) => {
+          events.push(event);
+        }
+        const processEvent = eventProcessor || defaultProcessor;
 
-    let step;
-    for (step = 0; step < count; step++) {
-      const shouldContinue = await this.readOnce({
-        partitionId,
-        sequenceNumber: sequenceNumber + step,
-        processEvent
+        let step = 0;
+        while (step < count) {
+          const shouldContinue = await this.readOnce({
+              partitionId,
+              sequenceNumber: sequenceNumber + step,
+              processEvent
+            });
+
+          if (shouldContinue) {
+            step++;
+            await this.setSequenceNumber({ partitionId, sequenceNumber: sequenceNumber + step });
+          } else {
+            break;
+          }
+        }
+
+        return events;
       });
+    } catch (err) {
+      if (err.code === 'ConsumerLockFailedException') {
+        return [];
+      } else {
+        throw err;
+      }
+    }
+  }
 
-      if (!shouldContinue) { break; }
+  async withConsumerLock({ partitionId }, closure) {
+    try {
+      await this.obtainConsumerLock({ partitionId });
+    } catch (err) {
+      if (err.code === 'ConditionalCheckFailedException') {
+        log.debug('Couldn\'t obtain consumer lock', this.threadId.slice(0, 6), partitionId);
+        const error = new Error('Unable to obtain consumer lock. Another consumer thread is operating on this partition.');
+        error.code = 'ConsumerLockFailedException';
+        throw error;
+      } else {
+        throw err;
+      }
     }
 
-    await this.setSequenceNumber({ partitionId, sequenceNumber: sequenceNumber + step});
+    log.debug('successfully obtained consumer lock', this.threadId.slice(0, 6), partitionId);
 
-    return events;
+    try {
+      return await closure();
+    } catch (err) {
+      throw err;
+    } finally {
+      await this.releaseConsumerLock({ partitionId });
+    }
+  }
+
+  async obtainConsumerLock({ partitionId }) {
+    log.debug('obtaining consumer lock', this.threadId.slice(0, 6), partitionId);
+    const now = Date.now();
+    const params = {
+      TableName: this.consumersTable,
+      Key: {
+        consumerId: this.consumerName,
+        partitionId
+      },
+      UpdateExpression: 'SET activeThreadId = :threadId, activeExpiration = :activeExpiration',
+      ConditionExpression: 'attribute_not_exists(activeThreadId) OR activeExpiration < :timestamp',
+      ExpressionAttributeValues: {
+        ':threadId': this.threadId,
+        ':timestamp': now,
+        ':activeExpiration': now + this.lastActiveExpirationMs
+      }
+    }
+
+    await dynamoDb.updateAsync(params);
+  }
+
+  async releaseConsumerLock({ partitionId }) {
+    log.debug('releasing consumer lock', this.threadId.slice(0, 6), partitionId);
+    const params = {
+      TableName: this.consumersTable,
+      Key: {
+        consumerId: this.consumerName,
+        partitionId
+      },
+      UpdateExpression: 'REMOVE activeThreadId',
+      ConditionExpression: 'activeThreadId = :threadId',
+      ExpressionAttributeValues: {
+        ':threadId': this.threadId
+      }
+    }
+
+    await dynamoDb.updateAsync(params);
   }
 
   async readOnce({ partitionId, sequenceNumber, retries = 3, processEvent }) {
