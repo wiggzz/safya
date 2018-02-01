@@ -1,14 +1,19 @@
-const crypto = require('crypto');
-const log = require('loglevel');
-const s3 = require('./s3-storage');
-const dynamoDb = require('./dynamodb');
-const Partitioner = require('./Partitioner');
-const { contentDigest, retryOnFailure } = require('./helpers');
+const crypto = require("crypto");
+const log = require("loglevel");
+const s3 = require("./s3-storage");
+const dynamoDb = require("./dynamodb");
+const Partitioner = require("./Partitioner");
+const { contentDigest, retryOnFailure } = require("./helpers");
 
-const PARTITIONER_KEY = 'meta_partitioner';
+const PARTITIONER_KEY = "meta_partitioner";
 
 class Safya {
-  constructor({ eventsBucket, partitionsTable, storage = s3, preferredPartitioner }) {
+  constructor({
+    eventsBucket,
+    partitionsTable,
+    storage = s3,
+    preferredPartitioner
+  }) {
     this.bucket = eventsBucket;
     this.storage = storage;
     this.partitionsTable = partitionsTable;
@@ -21,7 +26,7 @@ class Safya {
 
   async writeEvent(partitionKey, data) {
     if (!data instanceof String || !data instanceof Buffer) {
-      throw new Error('Event data must either be string or buffer');
+      throw new Error("Event data must either be string or buffer");
     }
 
     const partitionId = await this.getPartitionId({ partitionKey });
@@ -40,14 +45,35 @@ class Safya {
   }
 
   async getPartitionId({ partitionKey }) {
-    return retryOnFailure(async () => {
-      const partitioner = await this.getPartitioner();
-      return partitioner.partitionIdForKey(partitionKey);
-    }, {
-      retries: 10,
-      predicate: (err) => err.code === 'ConditionalCheckFailedException',
-      messageOnFailure: 'Unable to obtain partition id, maximum retries reached'
-    });
+    return retryOnFailure(
+      async () => {
+        const partitioner = await this.getPartitioner();
+        return partitioner.partitionIdForKey(partitionKey);
+      },
+      {
+        retries: 10,
+        predicate: err => err.code === "ConditionalCheckFailedException",
+        messageOnFailure:
+          "Unable to obtain partition id, maximum retries reached"
+      }
+    );
+  }
+
+  async getSequenceNumber({ partitionId }) {
+    const params = {
+      TableName: this.partitionsTable,
+      Key: {
+        partitionId
+      }
+    };
+
+    const { Item } = await dynamoDb.getAsync(params);
+
+    if (Item) {
+      return Item.sequenceNumber;
+    } else {
+      return undefined;
+    }
   }
 
   async reserveSequenceNumber({ partitionId }) {
@@ -56,14 +82,16 @@ class Safya {
       Key: {
         partitionId
       },
-      UpdateExpression: 'ADD sequenceNumber :one',
+      UpdateExpression: "ADD sequenceNumber :one",
       ExpressionAttributeValues: {
-        ':one': 1
+        ":one": 1
       },
-      ReturnValues: 'UPDATED_NEW'
+      ReturnValues: "UPDATED_NEW"
     };
 
-    const { Attributes: { sequenceNumber } } = await dynamoDb.updateAsync(params);
+    const { Attributes: { sequenceNumber } } = await dynamoDb.updateAsync(
+      params
+    );
 
     return sequenceNumber;
   }
@@ -85,8 +113,13 @@ class Safya {
     if (Item) {
       this.partitioner = Partitioner.fromString(Item.partitioner);
 
-      if (this.preferredPartitioner && !this.partitioner.isEquivalentTo(this.preferredPartitioner)) {
-        log.warn('The partitioner currently installed in your Safya stack is not the same as your specified preferred partitioner.')
+      if (
+        this.preferredPartitioner &&
+        !this.partitioner.isEquivalentTo(this.preferredPartitioner)
+      ) {
+        log.warn(
+          "The partitioner currently installed in your Safya stack is not the same as your specified preferred partitioner."
+        );
       }
     } else {
       this.partitioner = await this.initializePartitioner();
@@ -97,7 +130,9 @@ class Safya {
 
   async initializePartitioner() {
     if (!this.preferredPartitioner) {
-      log.warn('You did not specify a partitioner, so we will use a default partitioner.');
+      log.warn(
+        "You did not specify a partitioner, so we will use a default partitioner."
+      );
       this.preferredPartitioner = new Partitioner();
     }
 
@@ -105,7 +140,7 @@ class Safya {
 
     const params = {
       TableName: this.partitionsTable,
-      ConditionExpression: 'attribute_not_exists(partitionId)',
+      ConditionExpression: "attribute_not_exists(partitionId)",
       Item: {
         partitionId: PARTITIONER_KEY,
         partitioner: partitioner.toString()

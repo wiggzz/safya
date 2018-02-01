@@ -54,7 +54,7 @@ describe('end to end', function () {
       expect(events).to.be.empty;
     });
 
-    it('events that are produced in order should stay in order when consumed', async () => {
+    it('should read events in the order they were produced', async () => {
       const thread = (threadId) => async () => {
         for (let i = 1; i < 5; i++) {
           await safya.writeEvent('id-12345', JSON.stringify({ id: threadId, i }));
@@ -80,6 +80,27 @@ describe('end to end', function () {
         },
         count: 60
       });
+    });
+
+    it('should not bork when an item is missing in S3 due to a failed write', async () => {
+      const stub = sinon.stub(safya.storage, 'putObjectAsync');
+      stub.onFirstCall().throws();
+
+      try {
+        await safya.writeEvent('id-12345', 'bingo failed');
+      } catch (err) {
+        // ignore
+      }
+
+      stub.restore();
+
+      await safya.writeEvent('id-12345', 'bingo success');
+
+      const [ partitionId ] = await consumer.getPartitionIds();
+      const events = await consumer.readEvents({ partitionId });
+
+      expect(events).to.have.lengthOf(1);
+      expect(events[0].toString('utf8')).to.equal('bingo success');
     });
   });
 });

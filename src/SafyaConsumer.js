@@ -98,9 +98,14 @@ class SafyaConsumer {
       return true;
     } catch (err) {
       if (err.code === 'NoSuchKey') {
-        // TODO: need to check if this truly is the end of the stream via the partitions table. a write error may have occurred.
-        log.debug(`seq. no. ${sequenceNumber} doesn\'t exist yet`);
-        return false;
+        const partitionSequenceNumber = await this.safya.getSequenceNumber({ partitionId });
+        if (partitionSequenceNumber < sequenceNumber) {
+          log.debug(`${partitionId}:${sequenceNumber} doesn\'t exist yet`);
+          return false;
+        } else {
+          log.warn(`${partitionId}:${sequenceNumber} is corrupted, ignoring it.`);
+          return true;
+        }
       } else {
         log.debug(err);
         if (retries > 0) {
