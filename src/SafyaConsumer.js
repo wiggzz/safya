@@ -164,7 +164,7 @@ class SafyaConsumer {
         consumerId: this.consumerName,
         partitionId
       },
-      UpdateExpression: 'REMOVE activeThreadId',
+      UpdateExpression: 'REMOVE activeThreadId, activeExpiration',
       ConditionExpression: 'activeThreadId = :threadId',
       ExpressionAttributeValues: {
         ':threadId': this.threadId
