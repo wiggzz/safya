@@ -29,7 +29,7 @@ class Safya {
       throw new Error("Event data must either be string or buffer");
     }
 
-    const partitionId = await this.getPartitionId({ partitionKey });
+    const partitionId = await this.getPartitionId({ partitionKey, createIfNotExists: true });
 
     const sequenceNumber = await this.reserveSequenceNumber({ partitionId });
 
@@ -44,10 +44,10 @@ class Safya {
     return key;
   }
 
-  async getPartitionId({ partitionKey }) {
+  async getPartitionId({ partitionKey, createIfNotExists = false }) {
     return retryOnFailure(
       async () => {
-        const partitioner = await this.getPartitioner();
+        const partitioner = await this.getPartitioner({ createIfNotExists });
         return partitioner.partitionIdForKey(partitionKey);
       },
       {
@@ -93,10 +93,10 @@ class Safya {
       params
     );
 
-    return sequenceNumber;
+    return sequenceNumber - 1;
   }
 
-  async getPartitioner() {
+  async getPartitioner({ createIfNotExists = false } = {}) {
     if (this.partitioner) {
       return this.partitioner;
     }
@@ -121,8 +121,10 @@ class Safya {
           "The partitioner currently installed in your Safya stack is not the same as your specified preferred partitioner."
         );
       }
-    } else {
+    } else if (createIfNotExists) {
       this.partitioner = await this.initializePartitioner();
+    } else {
+      throw new Error('Unable to obtain partitioner: No partitioner has been initialized yet for this Safya stack.');
     }
 
     return this.partitioner;

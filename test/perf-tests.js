@@ -1,7 +1,7 @@
 const expect = require('chai').expect;
 const sinon = require('sinon');
 const testInfra = require('./test-infra');
-const invokePerformanceTest = require('./perf-lambda/invoke');
+const { runProducerTest, runConsumerTest } = require('./perf-lambda/invoke');
 const log = require('loglevel');
 log.setLevel('debug');
 
@@ -20,8 +20,17 @@ const prettyPrintBytes = (bytes) => {
 describe('performance', function () {
   this.timeout(100000);
 
+  let producerTestFunction, consumerTestFunction, partitionsTable, consumersTable, eventsBucket;
+
   before(async () => {
-    ({ performanceTestFunction } = await testInfra.describePerfStack());
+    (
+      { producerTestFunction,
+        consumerTestFunction,
+        partitionsTable,
+        consumersTable,
+        eventsBucket
+      } = await testInfra.describePerfStack()
+    );
   });
 
   describe('parameterized producer tests', () => {
@@ -37,12 +46,6 @@ describe('performance', function () {
         threadCount: 150,
         eventsPerSecond: 3,
         timeoutSeconds: 10
-      },
-      {
-        eventSize: 4096,
-        threadCount: 300,
-        eventsPerSecond: 3,
-        timeoutSeconds: 10
       }
     ]
 
@@ -52,8 +55,8 @@ describe('performance', function () {
       it(`should manage production of approximately ${ prettyPrintBytes(dataRate) }/s for ${item.timeoutSeconds} seconds`, async () => {
         const expectedEvents = item.eventsPerSecond * item.threadCount * item.timeoutSeconds;
 
-        const report = await invokePerformanceTest({
-          functionName: performanceTestFunction,
+        const report = await runProducerTest({
+          functionName: producerTestFunction,
           eventSizeBytes: item.eventSize,
           eventsPerSecond: item.eventsPerSecond,
           timeoutMs: item.timeoutSeconds * 1000,
@@ -70,5 +73,20 @@ describe('performance', function () {
       });
     });
   });
+
+  describe('consumer tests', () => {
+    it('should read as many events as possible (yea i need a better test)', async () => {
+      const report = await runConsumerTest({
+        functionName: consumerTestFunction,
+        partitionsTable,
+        consumersTable,
+        eventsBucket,
+        readCountPerLambda: 100
+      });
+
+      log.debug('report', report);
+      log.debug('data rate (MB/s', report.totalBytes / report.totalTimeMs / (1024*1024) * 1000);
+    });
+  })
 });
 

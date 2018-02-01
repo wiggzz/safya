@@ -18,7 +18,7 @@ Resources:
             - '/safya-perf-stack.yml'
       Parameters:
         InitialProvisionedCapacity: 100
-  PerformanceTestFunction:
+  ProducerTestFunction:
     Type: AWS::Lambda::Function
     Properties:
       Code:
@@ -34,7 +34,29 @@ Resources:
             Fn::GetAtt: [SafyaStack, Outputs.PartitionsTableName]
           CONSUMERS_TABLE:
             Fn::GetAtt: [SafyaStack, Outputs.ConsumersTableName]
-      Handler: handler.performanceTestThread
+      Handler: handler.producerTestThread
+      Role:
+        Fn::GetAtt: [PerformanceTestFunctionRole, Arn]
+      Runtime: nodejs6.10
+      Timeout: 300
+      MemorySize: 1024
+  ConsumerTestFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket:
+          Ref: DeploymentBucket
+        S3Key:
+          Ref: LambdaPackageS3Key
+      Environment:
+        Variables:
+          EVENTS_BUCKET:
+            Fn::GetAtt: [SafyaStack, Outputs.EventsBucketName]
+          PARTITIONS_TABLE:
+            Fn::GetAtt: [SafyaStack, Outputs.PartitionsTableName]
+          CONSUMERS_TABLE:
+            Fn::GetAtt: [SafyaStack, Outputs.ConsumersTableName]
+      Handler: handler.consumerTestThread
       Role:
         Fn::GetAtt: [PerformanceTestFunctionRole, Arn]
       Runtime: nodejs6.10
@@ -116,8 +138,12 @@ Outputs:
     Description: Events bucket name
     Value:
       Fn::GetAtt: [SafyaStack, Outputs.EventsBucketName]
-  PerformanceTestFunctionName:
-    Description: Performance test function name
+  ProducerTestFunctionName:
+    Description: Producer test function name
     Value:
-      Ref: PerformanceTestFunction
+      Ref: ProducerTestFunction
+  ConsumerTestFunctionName:
+    Description: Consumer test function name
+    Value:
+      Ref: ConsumerTestFunction
 

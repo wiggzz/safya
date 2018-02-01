@@ -39,7 +39,8 @@ describe('end to end', function () {
 
       const [ partitionId ] = await consumer.getPartitionIds();
 
-      const events = await consumer.readEvents({ partitionId });
+      const events = [];
+      await consumer.readEvents({ partitionId }, events.push.bind(events));
 
       expect(events[0].toString('utf8')).to.equal('foo');
     });
@@ -49,7 +50,8 @@ describe('end to end', function () {
 
       const [ partitionId ] = await consumer.getPartitionIds();
       await consumer.readEvents({ partitionId });
-      const events = await consumer.readEvents({ partitionId });
+      const events = [];
+      await consumer.readEvents({ partitionId }, events.push.bind(events));
 
       expect(events).to.be.empty;
     });
@@ -72,13 +74,12 @@ describe('end to end', function () {
       const [ partitionId ] = await consumer.getPartitionIds();
       await consumer.readEvents({
         partitionId,
-        eventProcessor: event => {
-          const { id, i } = JSON.parse(event);
-          const expected = (last[id] || 0) + 1;
-          expect(i).to.equal(expected);
-          last[id] = expected;
-        },
         count: 60
+      }, event => {
+        const { id, i } = JSON.parse(event);
+        const expected = (last[id] || 0) + 1;
+        expect(i).to.equal(expected);
+        last[id] = expected;
       });
     });
 
@@ -97,7 +98,8 @@ describe('end to end', function () {
       await safya.writeEvent('id-12345', 'bingo success');
 
       const [ partitionId ] = await consumer.getPartitionIds();
-      const events = await consumer.readEvents({ partitionId });
+      const events = [];
+      await consumer.readEvents({ partitionId }, events.push.bind(events));
 
       expect(events).to.have.lengthOf(1);
       expect(events[0].toString('utf8')).to.equal('bingo success');
@@ -116,18 +118,13 @@ describe('end to end', function () {
       });
 
       const [ partitionId ] = await consumer.getPartitionIds();
-      const [ events1, events2 ] = await Promise.all([
-        consumer.readEvents({ partitionId }),
-        consumer2.readEvents({ partitionId })
+      const events = []
+      await Promise.all([
+        consumer.readEvents({ partitionId }, events.push.bind(events)),
+        consumer2.readEvents({ partitionId }, events.push.bind(events))
       ]);
 
-      if (events1.length > 0) {
-        expect(events1).to.have.lengthOf(5);
-        expect(events2).to.have.lengthOf(0);
-      } else {
-        expect(events2).to.have.lengthOf(5);
-        expect(events1).to.have.lengthOf(0);
-      }
+      expect(events).to.have.lengthOf(5);
     });
   });
 });

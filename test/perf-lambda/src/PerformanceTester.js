@@ -1,4 +1,4 @@
-const { Safya, Partitioner } = require('../../../src');
+const { Safya, SafyaConsumer, Partitioner } = require('../../../src');
 const crypto = require('crypto');
 
 const safyaFactory = () => new Safya({
@@ -7,9 +7,17 @@ const safyaFactory = () => new Safya({
   preferredPartitioner: new Partitioner({ partitionCount: 10 })
 });
 
+const safyaConsumerFactory = () => new SafyaConsumer({
+  eventsBucket: process.env.EVENTS_BUCKET,
+  partitionsTable: process.env.PARTITIONS_TABLE,
+  consumersTable: process.env.CONSUMERS_TABLE,
+  name: 'performance-test-lambda-consumer'
+});
+
 class PerformanceTester {
-  constructor({ safya = safyaFactory() } = {}) {
+  constructor({ safya = safyaFactory(), safyaConsumer = safyaConsumerFactory() } = {}) {
     this.safya = safya;
+    this.safyaConsumer = safyaConsumer;
   }
 
   async execute({ contextId, threadCount, delayMs, timeoutMs, eventSizeBytes }) {
@@ -49,6 +57,30 @@ class PerformanceTester {
     });
 
     return summary
+  }
+
+  async consume({ partitionId, count }) {
+    let totalBytes = 0;
+    let eventsRead = 0;
+
+    const results = await this.safyaConsumer.readEvents({
+        partitionId,
+        count
+      },
+      (event) => {
+        eventsRead += 1;
+        totalBytes += event.length;
+        console.log(`Read ${event.length} bytes from partition ${partitionId}.`);
+      },
+    );
+
+    const done = results.eventsRemaining === 0;
+
+    return {
+      totalBytes,
+      eventsRead,
+      done
+    };
   }
 
   async performanceAction(eventSizeBytes, requestId, threadId) {

@@ -221,13 +221,15 @@ const perfStackPhysicalIds = async (stackName) => {
   const partitionsTable = outputForStackWithOutputKey(Stacks[0], 'PartitionsTableName');
   const consumersTable = outputForStackWithOutputKey(Stacks[0], 'ConsumersTableName');
   const eventsBucket = outputForStackWithOutputKey(Stacks[0], 'EventsBucketName');
-  const performanceTestFunction = outputForStackWithOutputKey(Stacks[0], 'PerformanceTestFunctionName');
+  const producerTestFunction = outputForStackWithOutputKey(Stacks[0], 'ProducerTestFunctionName');
+  const consumerTestFunction = outputForStackWithOutputKey(Stacks[0], 'ConsumerTestFunctionName');
   return {
     deploymentBucket,
     partitionsTable,
     consumersTable,
     eventsBucket,
-    performanceTestFunction
+    producerTestFunction,
+    consumerTestFunction
   };
 }
 

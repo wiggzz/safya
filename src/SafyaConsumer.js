@@ -47,7 +47,7 @@ class SafyaConsumer {
       return Item.sequenceNumber;
     }
 
-    return 1;
+    return 0;
   }
 
   async setSequenceNumber({ partitionId, sequenceNumber }) {
@@ -69,37 +69,39 @@ class SafyaConsumer {
     await dynamoDb.updateAsync(params);
   }
 
-  async readEvents({ partitionId, eventProcessor, count = 20 } = {}) {
+  async readEvents({ partitionId, count = 20 } = {}, eventProcessor) {
     // i hate exception handling in javascript.
     try {
       return await this.withConsumerLock({ partitionId }, async () => {
+
         const sequenceNumber = await this.getSequenceNumber({ partitionId });
 
         log.debug('sequence number', sequenceNumber);
 
-        const events = [];
-        const defaultProcessor = async (event) => {
-          events.push(event);
-        }
-        const processEvent = eventProcessor || defaultProcessor;
+        const noOpProcessor = () => {};
+        const processEvent = eventProcessor || noOpProcessor;
 
-        let step = 0;
-        while (step < count) {
+        let consumptionCount = 0;
+        while (consumptionCount < count) {
           const shouldContinue = await this.readOnce({
               partitionId,
-              sequenceNumber: sequenceNumber + step,
+              sequenceNumber: sequenceNumber + consumptionCount,
               processEvent
             });
 
           if (shouldContinue) {
-            step++;
-            await this.setSequenceNumber({ partitionId, sequenceNumber: sequenceNumber + step });
+            consumptionCount++;
+            await this.setSequenceNumber({ partitionId, sequenceNumber: sequenceNumber + consumptionCount });
           } else {
             break;
           }
         }
 
-        return events;
+        const partitionSequenceNumber = await this.safya.getSequenceNumber({ partitionId });
+
+        return {
+          eventsRemaining: partitionSequenceNumber - sequenceNumber - consumptionCount
+        };
       });
     } catch (err) {
       if (err.code === 'ConsumerLockFailedException') {
@@ -184,7 +186,7 @@ class SafyaConsumer {
     } catch (err) {
       if (err.code === 'NoSuchKey') {
         const partitionSequenceNumber = await this.safya.getSequenceNumber({ partitionId });
-        if (partitionSequenceNumber < sequenceNumber) {
+        if (partitionSequenceNumber <= sequenceNumber) {
           log.debug(`${partitionId}:${sequenceNumber} doesn\'t exist yet`);
           return false;
         } else {

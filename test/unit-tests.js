@@ -28,7 +28,7 @@ describe('unit tests', () => {
         expect(mockSafya.writeEvent).to.have.callCount(2);
         expect(results.totalBytes).to.equal(256 * 2);
         expect(results.eventsWritten).to.equal(2);
-      })
-    })
-  })
+      });
+    });
+  });
 });
