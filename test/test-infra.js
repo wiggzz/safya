@@ -5,14 +5,18 @@ const _ = require('lodash');
 const log = require('loglevel');
 const { promisifyAll } = require('bluebird');
 const uploadPerfLambda = require('./perf-lambda/upload');
+log.setLevel('debug');
 
 AWS.config.region = 'us-east-1';
 
 const cloudformation = promisifyAll(new AWS.CloudFormation());
 const s3 = promisifyAll(new AWS.S3());
 
+const E2E_STACK_NAME = 'safya-e2e-tests';
+const PERF_STACK_NAME = 'safya-perf-tests';
+
 const deployE2EStack = async () => {
-  const STACK_NAME = 'safya-e2e-tests';
+  const STACK_NAME = E2E_STACK_NAME;
   const CHANGE_SET_NAME = 'safya-e2e-tests-changeset';
 
   const TemplateBody = fs.readFileSync(path.resolve(__dirname, path.join('..','src','stack.yml')), 'utf8');
@@ -38,10 +42,20 @@ const deployE2EStack = async () => {
     await cloudformation.waitForAsync(shouldUpdateStack ? 'stackUpdateComplete' : 'stackCreateComplete', {
       StackName: STACK_NAME
     });
+  } else {
+    log.debug('deleting change set');
+    await cloudformation.deleteChangeSet({
+      StackName: STACK_NAME,
+      ChangeSetName: CHANGE_SET_NAME
+    });
   }
 
   return await e2eStackPhysicalIds(STACK_NAME);
 };
+
+const describeE2EStack = () => {
+  return e2eStackPhysicalIds(E2E_STACK_NAME);
+}
 
 const e2eStackPhysicalIds = async (stackName) => {
   const { Stacks } = await cloudformation.describeStacksAsync({
@@ -57,8 +71,6 @@ const e2eStackPhysicalIds = async (stackName) => {
     consumersTable,
     eventsBucket
   };
-
-  log.debug('physical ids', ids);
 
   return ids;
 }
@@ -118,7 +130,7 @@ const stackIsUpdatable = async (stackName) => {
 }
 
 const deployPerfStack = async () => {
-  const STACK_NAME = 'safya-perf-tests';
+  const STACK_NAME = PERF_STACK_NAME;
   const CHANGE_SET_NAME = 'safya-perf-tests-changeset';
 
   const createTemplate = fs.readFileSync(path.resolve(__dirname, 'perf-stack-create.yml'), 'utf8');
@@ -136,6 +148,7 @@ const deployPerfStack = async () => {
     });
 
     const deploymentBucket = _.find(Stacks[0].Outputs, { OutputKey: 'DeploymentBucketName' }).OutputValue;
+    const previousLambdaPackageParameter = _.find(Stacks[0].Parameters, { ParameterKey: 'LambdaPackageS3Key' });
 
     // upload safya stack template to s3 bucket
     await s3.putObjectAsync({
@@ -145,16 +158,15 @@ const deployPerfStack = async () => {
     });
 
     // deploy lambda resources
-    const uploaded = await uploadPerfLambda(deploymentBucket, lambdaPackageKey);
+    const packageChanged = await uploadPerfLambda(deploymentBucket, lambdaPackageKey);
 
-
-    if (!uploaded) {
+    if (!packageChanged && previousLambdaPackageParameter) {
       log.debug('No changes to lambda package, reusing previous deployment package.');
       usePreviousLambdaPackage = true;
     }
   }
 
-  log.debug('Creating change set');
+  log.debug('creating change set');
   const changeSet = await cloudformation.createChangeSetAsync({
     StackName: STACK_NAME,
     ChangeSetName: CHANGE_SET_NAME,
@@ -171,7 +183,7 @@ const deployPerfStack = async () => {
   });
 
   if (await changeSetReadyAndWillProduceChanges(STACK_NAME, CHANGE_SET_NAME)) {
-    log.debug('Executing change set');
+    log.debug('executing change set');
     await cloudformation.executeChangeSetAsync({
       StackName: STACK_NAME,
       ChangeSetName: CHANGE_SET_NAME
@@ -179,6 +191,12 @@ const deployPerfStack = async () => {
 
     await cloudformation.waitForAsync(shouldUpdateStack ? 'stackUpdateComplete' : 'stackCreateComplete', {
       StackName: STACK_NAME
+    });
+  } else {
+    log.debug('deleting change set');
+    await cloudformation.deleteChangeSet({
+      StackName: STACK_NAME,
+      ChangeSetName: CHANGE_SET_NAME
     });
   }
 
@@ -189,6 +207,10 @@ const deployPerfStack = async () => {
     return perfStackPhysicalIds(STACK_NAME);
   }
 }
+
+const describePerfStack = () => {
+  return perfStackPhysicalIds(PERF_STACK_NAME);
+};
 
 const perfStackPhysicalIds = async (stackName) => {
   const { Stacks } = await cloudformation.describeStacksAsync({
@@ -209,7 +231,22 @@ const perfStackPhysicalIds = async (stackName) => {
   };
 }
 
+const exitWithError = (err) => {
+  console.error(err);
+  process.exitCode = 1;
+}
+
+if (require.main === module) {
+  if (process.argv[2] === 'deploy-e2e') {
+    deployE2EStack().then(console.log).catch(exitWithError);
+  } else if (process.argv[2] === 'deploy-perf') {
+    deployPerfStack().then(console.log).catch(exitWithError);
+  }
+}
+
 module.exports = {
   deployE2EStack,
-  deployPerfStack
+  deployPerfStack,
+  describeE2EStack,
+  describePerfStack
 };

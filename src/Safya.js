@@ -51,64 +51,19 @@ class Safya {
   }
 
   async reserveSequenceNumber({ partitionId }) {
-    return retryOnFailure(async () => {
-      const sequenceNumber = await this.getSequenceNumber({ partitionId });
-      await this.incrementSequenceNumber({ partitionId, sequenceNumber });
-      return sequenceNumber;
-    }, {
-      retries: 10,
-      predicate: (err) => err.code === 'ConditionalCheckFailedException',
-      messageOnFailure: 'Unable to obtain a sequence number, maximum retries reached'
-    });
-  }
-
-  async getSequenceNumber({ partitionId }) {
-    const params = {
-      TableName: this.partitionsTable,
-      Key: {
-        partitionId
-      }
-    };
-
-    const { Item } = await dynamoDb.getAsync(params);
-
-    if (Item) {
-      return Item.sequenceNumber;
-    } else {
-      return this.initializeSequenceNumber({ partitionId });
-    }
-  }
-
-  async incrementSequenceNumber({ partitionId, sequenceNumber }) {
     const params = {
       TableName: this.partitionsTable,
       Key: {
         partitionId
       },
-      UpdateExpression: 'set sequenceNumber = sequenceNumber + :ONE',
-      ConditionExpression: 'sequenceNumber = :CURRENT',
+      UpdateExpression: 'ADD sequenceNumber :one',
       ExpressionAttributeValues: {
-        ':CURRENT': sequenceNumber,
-        ':ONE': 1
-      }
-    }
-    log.debug('update params', params);
-
-    await dynamoDb.updateAsync(params);
-  }
-
-  async initializeSequenceNumber({ partitionId }) {
-    const sequenceNumber = 0;
-
-    const params = {
-      TableName: this.partitionsTable,
-      ConditionExpression: 'attribute_not_exists(partitionId)',
-      Item: {
-        partitionId,
-        sequenceNumber
-      }
+        ':one': 1
+      },
+      ReturnValues: 'UPDATED_NEW'
     };
-    await dynamoDb.putAsync(params);
+
+    const { Attributes: { sequenceNumber } } = await dynamoDb.updateAsync(params);
 
     return sequenceNumber;
   }
@@ -130,7 +85,7 @@ class Safya {
     if (Item) {
       this.partitioner = Partitioner.fromString(Item.partitioner);
 
-      if (!this.preferredPartitioner || !this.partitioner.isEquivalentTo(this.preferredPartitioner)) {
+      if (this.preferredPartitioner && !this.partitioner.isEquivalentTo(this.preferredPartitioner)) {
         log.warn('The partitioner currently installed in your Safya stack is not the same as your specified preferred partitioner.')
       }
     } else {

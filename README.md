@@ -53,3 +53,43 @@ We need a way of splitting the partitions among consumers for catch-up mode. Rea
 We need a deterministic algorithm for determining the begins_with to split the stream up by consumer.
 
 BLAH. Except, before we have any consumer information, we need to be able to read the events in the partitions table, which are not ordered for us to be able to do so. We'll need to index the partitions table so we can sort by partition id. The real issue is that with an arbitrarily high number of partitions which are not indexed on how they will be read, we will need to check every partition to determine if this one matches our consumer and if we should read from it.
+
+Ok, so we have a bit of performance now. 1MB/s isn't bad, and it could scale much further I believe. However, we do have the issue that we needed to create a lot of partitions to prevent re-reads. Is there a way to design the partitions table so that we don't have this issue?
+
+What about:
+{
+  "partitionId": "[partition-id]",
+  "partitionKey": "[partition-key]",
+  "sequenceNumber": "[sequence-Number]"
+}
+
+with a primary key as the partitionId, and partitionKey as the SORT key, because we only care about ordering for partitionKey. Then when we write, we increment the sequencNumber for the partitionKey, but on reading, we can simply scan the partitionId for items that need to be read.
+
+Blah. Except, again, same problem as above. But, are these problems not all the same? With the way we write to dynamoDb, we will need a lot of partitions. With a lot of partitions, we will have difficulty scanning them.
+
+So, maybe the process for reading needs to be better defined.
+
+To read every event:
+
+ 1. Get a list of partitions
+ 2. For each partition, get a list of sorted partitionKeys (potentially billions of these if we are being scalable)
+ 3. For partitionKey, read all the events.
+
+What happens if a new partitionKey is added to a partition while we are reading? How do we know we have read it?
+
+Better to have many many partitions.
+
+Then, to read:
+
+ 1. Get list of partitions (potentially many, like hundreds of thousands to millions)
+ 2. For each partition, read every event.
+
+For an over-partitioned Safya, we will have many empty partitions if we start with some large default. Although, I guess we wont have an entry in the DB for any empty partition, so that will prevent over-reading.
+
+For catch-up it isn't a problem to have to scan every item because we'd need to do it anyway. However, it's in the middle ground we might have issues. This is where the Active flag comes in for the consumer. We need to know when we receive a new event on a partition, if we can start a new consumer on that partition. If the partition consumer is Active, it should mean, we're guaranteed they will read the event that we have just been triggered for. If they are inactive, it means we need to read the event or it may never get read (because catch-up should only need to happen once since it is expensive). It would be nice to have an index of which consumer partitions are "caught-up".
+
+Catch-up becomes even more problematic with lambda - it is difficult to have a long running process to manage the catch-up, so how do we keep state of the catch-up through time? We want to limit concurrency, so we cant kick off a lambda for every partition, and then each time it runs out of time, have it restart itself.
+
+For facilitating catch-up, it might be possible to split the partitions in time as well as in key space. This way, when catching up, some partitions will be 'sealed' and we can progress logically through them with an assurance that no new items will be added to ones we have already processed.
+
+OH Sick, dynamodb does support add and return values in a strongly consistent way! So we don't need tons of partitions.

@@ -24,6 +24,8 @@
     "webpack": "^3.10.0"
   },
   "scripts": {
-    "test": "mocha"
+    "test": "mocha test/unit-tests.js",
+    "test:e2e": "node test/test-infra.js deploy-e2e && mocha test/e2e-tests.js",
+    "test:perf": "node test/test-infra.js deploy-perf && mocha test/perf-tests.js"
   }
 }

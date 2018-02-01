@@ -66,9 +66,12 @@ const getDigest = (file) => {
 }
 
 const getPackageHash = () => {
-  return getDigest(path.resolve(__dirname, 'dist', 'handler.js'));
+  try {
+    return getDigest(path.resolve(__dirname, 'dist', 'handler.js'));
+  } catch (err) {
+    return undefined;
+  }
 }
-
 
 module.exports = async (deploymentBucket, packageKey) => {
   const previousHash = await getPackageHash();
@@ -77,14 +80,10 @@ module.exports = async (deploymentBucket, packageKey) => {
 
   const currentHash = await getPackageHash();
 
-  if (currentHash === previousHash) {
-    return false;
-  }
-
   await package();
   await upload(deploymentBucket, packageKey);
 
   cleanup();
 
-  return true;
+  return previousHash !== currentHash;
 }

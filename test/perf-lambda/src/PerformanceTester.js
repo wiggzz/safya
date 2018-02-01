@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const safyaFactory = () => new Safya({
   eventsBucket: process.env.EVENTS_BUCKET,
   partitionsTable: process.env.PARTITIONS_TABLE,
-  preferredPartitioner: new Partitioner({ partitionCount: 10000 })
+  preferredPartitioner: new Partitioner({ partitionCount: 10 })
 });
 
 class PerformanceTester {

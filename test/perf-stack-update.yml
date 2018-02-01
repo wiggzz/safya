@@ -16,6 +16,8 @@ Resources:
           - - 'https://s3.amazonaws.com/'
             - Ref: DeploymentBucket
             - '/safya-perf-stack.yml'
+      Parameters:
+        InitialProvisionedCapacity: 100
   PerformanceTestFunction:
     Type: AWS::Lambda::Function
     Properties:

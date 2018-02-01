@@ -1,5 +1,30 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Safya unified log stack
+Parameters:
+  AutoScalingEnabled:
+    Type: String
+    AllowedValues:
+      - true
+      - false
+    Default: true
+    Description: Enable auto scaling on this stack
+  AutoScalingMaxCapacity:
+    Type: Number
+    Default: 200
+    Description: If auto-scaling is enabled, the maximum capacity to scale dynamodb up to
+  AutoScalingMinCapacity:
+    Type: Number
+    Default: 5
+    Description: If auto-scaling is enabled, the minimum capacity to scale dynamodb up to
+  InitialProvisionedCapacity:
+    Type: Number
+    Default: 5
+    Description: The initial capacity to provision the dynamodb tables with
+Conditions:
+  ProvisionAutoScaling:
+    Fn::Equals:
+      - Ref: AutoScalingEnabled
+      - true
 Resources:
   PartitionsTable:
     Type: AWS::DynamoDB::Table
@@ -11,8 +36,10 @@ Resources:
         - AttributeName: partitionId
           KeyType: HASH
       ProvisionedThroughput:
-        ReadCapacityUnits: 5
-        WriteCapacityUnits: 5
+        ReadCapacityUnits:
+          Ref: InitialProvisionedCapacity
+        WriteCapacityUnits:
+          Ref: InitialProvisionedCapacity
   ConsumersTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -27,13 +54,18 @@ Resources:
         - AttributeName: consumerId
           KeyType: RANGE
       ProvisionedThroughput:
-        ReadCapacityUnits: 5
-        WriteCapacityUnits: 5
+        ReadCapacityUnits:
+          Ref: InitialProvisionedCapacity
+        WriteCapacityUnits:
+          Ref: InitialProvisionedCapacity
   PartitionsReadAutoScalingTarget:
     Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Condition: ProvisionAutoScaling
     Properties:
-      MaxCapacity: 200
-      MinCapacity: 5
+      MaxCapacity:
+        Ref: AutoScalingMaxCapacity
+      MinCapacity:
+        Ref: AutoScalingMinCapacity
       ScalableDimension: dynamodb:table:ReadCapacityUnits
       RoleARN:
         Fn::GetAtt: [AutoScalingRole, Arn]
@@ -45,6 +77,7 @@ Resources:
       ServiceNamespace: dynamodb
   PartitionsReadAutoScalingPolicy:
     Type: "AWS::ApplicationAutoScaling::ScalingPolicy"
+    Condition: ProvisionAutoScaling
     Properties:
       PolicyName: PartitionsReadAutoScalingPolicy
       PolicyType: TargetTrackingScaling
@@ -58,9 +91,12 @@ Resources:
           PredefinedMetricType: DynamoDBReadCapacityUtilization
   PartitionsWriteAutoScalingTarget:
     Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Condition: ProvisionAutoScaling
     Properties:
-      MaxCapacity: 200
-      MinCapacity: 5
+      MaxCapacity:
+        Ref: AutoScalingMaxCapacity
+      MinCapacity:
+        Ref: AutoScalingMinCapacity
       ScalableDimension: dynamodb:table:WriteCapacityUnits
       RoleARN:
         Fn::GetAtt: [AutoScalingRole, Arn]
@@ -72,6 +108,7 @@ Resources:
       ServiceNamespace: dynamodb
   PartitionsWriteAutoScalingPolicy:
     Type: "AWS::ApplicationAutoScaling::ScalingPolicy"
+    Condition: ProvisionAutoScaling
     Properties:
       PolicyName: PartitionsWriteAutoScalingPolicy
       PolicyType: TargetTrackingScaling
@@ -85,9 +122,12 @@ Resources:
           PredefinedMetricType: DynamoDBWriteCapacityUtilization
   ConsumersReadAutoScalingTarget:
     Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Condition: ProvisionAutoScaling
     Properties:
-      MaxCapacity: 200
-      MinCapacity: 5
+      MaxCapacity:
+        Ref: AutoScalingMaxCapacity
+      MinCapacity:
+        Ref: AutoScalingMinCapacity
       ScalableDimension: dynamodb:table:ReadCapacityUnits
       RoleARN:
         Fn::GetAtt: [AutoScalingRole, Arn]
@@ -99,6 +139,7 @@ Resources:
       ServiceNamespace: dynamodb
   ConsumersReadAutoScalingPolicy:
     Type: "AWS::ApplicationAutoScaling::ScalingPolicy"
+    Condition: ProvisionAutoScaling
     Properties:
       PolicyName: ConsumersReadAutoScalingPolicy
       PolicyType: TargetTrackingScaling
@@ -112,9 +153,12 @@ Resources:
           PredefinedMetricType: DynamoDBReadCapacityUtilization
   ConsumersWriteAutoScalingTarget:
     Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Condition: ProvisionAutoScaling
     Properties:
-      MaxCapacity: 200
-      MinCapacity: 5
+      MaxCapacity:
+        Ref: AutoScalingMaxCapacity
+      MinCapacity:
+        Ref: AutoScalingMinCapacity
       ScalableDimension: dynamodb:table:WriteCapacityUnits
       RoleARN:
         Fn::GetAtt: [AutoScalingRole, Arn]
@@ -126,6 +170,7 @@ Resources:
       ServiceNamespace: dynamodb
   ConsumersWriteAutoScalingPolicy:
     Type: "AWS::ApplicationAutoScaling::ScalingPolicy"
+    Condition: ProvisionAutoScaling
     Properties:
       PolicyName: ConsumersWriteAutoScalingPolicy
       PolicyType: TargetTrackingScaling
@@ -139,6 +184,7 @@ Resources:
           PredefinedMetricType: DynamoDBWriteCapacityUtilization
   AutoScalingRole:
     Type: AWS::IAM::Role
+    Condition: ProvisionAutoScaling
     Properties:
       AssumeRolePolicyDocument:
         Version: '2012-10-17'

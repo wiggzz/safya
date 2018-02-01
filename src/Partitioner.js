@@ -9,7 +9,7 @@ const HIGHEST_SUPPORTED_VERSION = 1;
 const SUPPORTED_METHODS = [METHOD_MOD];
 
 class Partitioner {
-  constructor({ version = 1, method = METHOD_MOD, partitionCount = 100 } = {}) {
+  constructor({ version = 1, method = METHOD_MOD, partitionCount = 1 } = {}) {
     if (this.version > HIGHEST_SUPPORTED_VERSION) {
       throw new Error(`Please update your Safya SDK to support this Safya stack, requested version (${version}) > highest supported version (${HIGHEST_VERSION}).`);
     }

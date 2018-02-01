@@ -1,7 +1,7 @@
 const expect = require('chai').expect;
 const sinon = require('sinon');
 const testInfra = require('./test-infra');
-const { Safya, SafyaConsumer } = require('../src');
+const { Safya, SafyaConsumer, Partitioner } = require('../src');
 const log = require('loglevel');
 log.setLevel('debug');
 
@@ -12,11 +12,12 @@ describe('end to end', function () {
   let consumer, safya;
 
   before(async () => {
-    ({ eventsBucket, partitionsTable, consumersTable } = await testInfra.deployE2EStack());
+    ({ eventsBucket, partitionsTable, consumersTable } = await testInfra.describeE2EStack());
 
     safya = new Safya({
       eventsBucket,
-      partitionsTable
+      partitionsTable,
+      preferredPartitioner: new Partitioner({ partitionCount: 1 })
     });
 
     consumer = new SafyaConsumer({

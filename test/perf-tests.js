@@ -20,13 +20,11 @@ const prettyPrintBytes = (bytes) => {
 describe('performance', function () {
   this.timeout(100000);
 
-  let performanceTestFunction = 'safya-perf-tests-PerformanceTestFunction-EW53KJU3E4QK';
-
   before(async () => {
-    ({ performanceTestFunction } = await testInfra.deployPerfStack());
+    ({ performanceTestFunction } = await testInfra.describePerfStack());
   });
 
-  describe('initial testing', () => {
+  describe('parameterized producer tests', () => {
     const data = [
       {
         eventSize: 256,
@@ -36,7 +34,13 @@ describe('performance', function () {
       },
       {
         eventSize: 4096,
-        threadCount: 100,
+        threadCount: 150,
+        eventsPerSecond: 3,
+        timeoutSeconds: 10
+      },
+      {
+        eventSize: 4096,
+        threadCount: 300,
         eventsPerSecond: 3,
         timeoutSeconds: 10
       }
