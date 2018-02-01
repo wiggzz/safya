@@ -1,6 +1,6 @@
 {
   "name": "safya",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Simple, scalable, S3 based central unified log",
   "main": "index.js",
   "license": "MIT",
