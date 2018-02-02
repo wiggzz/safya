@@ -20,15 +20,13 @@ const prettyPrintBytes = (bytes) => {
 describe('performance', function () {
   this.timeout(100000);
 
-  let producerTestFunction, consumerTestFunction, partitionsTable, consumersTable, eventsBucket;
+  let producerTestFunction, consumerTestFunction, safyaConfig;
 
   before(async () => {
     (
       { producerTestFunction,
         consumerTestFunction,
-        partitionsTable,
-        consumersTable,
-        eventsBucket
+        safyaConfig
       } = await testInfra.describePerfStack()
     );
   });
@@ -78,9 +76,7 @@ describe('performance', function () {
     it('should read as many events as possible (yea i need a better test)', async () => {
       const report = await runConsumerTest({
         functionName: consumerTestFunction,
-        partitionsTable,
-        consumersTable,
-        eventsBucket,
+        safyaConfig,
         readCountPerLambda: 100
       });
 

@@ -12,10 +12,10 @@ Resources:
     Properties:
       TemplateURL:
         Fn::Join:
-          - ''
-          - - 'https://s3.amazonaws.com/'
+          - ""
+          - - "https://s3.amazonaws.com/"
             - Ref: DeploymentBucket
-            - '/safya-perf-stack.yml'
+            - "/safya-perf-stack.yml"
       Parameters:
         InitialProvisionedCapacity: 100
   ProducerTestFunction:
@@ -28,12 +28,8 @@ Resources:
           Ref: LambdaPackageS3Key
       Environment:
         Variables:
-          EVENTS_BUCKET:
-            Fn::GetAtt: [SafyaStack, Outputs.EventsBucketName]
-          PARTITIONS_TABLE:
-            Fn::GetAtt: [SafyaStack, Outputs.PartitionsTableName]
-          CONSUMERS_TABLE:
-            Fn::GetAtt: [SafyaStack, Outputs.ConsumersTableName]
+          SAFYA_CONFIG:
+            Fn::GetAtt: [SafyaStack, Outputs.ConfigString]
       Handler: handler.producerTestThread
       Role:
         Fn::GetAtt: [PerformanceTestFunctionRole, Arn]
@@ -50,12 +46,8 @@ Resources:
           Ref: LambdaPackageS3Key
       Environment:
         Variables:
-          EVENTS_BUCKET:
-            Fn::GetAtt: [SafyaStack, Outputs.EventsBucketName]
-          PARTITIONS_TABLE:
-            Fn::GetAtt: [SafyaStack, Outputs.PartitionsTableName]
-          CONSUMERS_TABLE:
-            Fn::GetAtt: [SafyaStack, Outputs.ConsumersTableName]
+          SAFYA_CONFIG:
+            Fn::GetAtt: [SafyaStack, Outputs.ConfigString]
       Handler: handler.consumerTestThread
       Role:
         Fn::GetAtt: [PerformanceTestFunctionRole, Arn]
@@ -66,7 +58,7 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
-        Version: '2012-10-17'
+        Version: "2012-10-17"
         Statement:
           - Effect: Allow
             Principal:
@@ -77,20 +69,20 @@ Resources:
       Policies:
         - PolicyName: PerformanceTestLambda
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: "2012-10-17"
             Statement:
               - Effect: Allow
                 Action:
                   - logs:CreateLogStream
                   - logs:CreateLogGroup
                   - logs:PutLogEvents
-                Resource: '*'
+                Resource: "*"
               - Effect: Allow
                 Action: s3:ListBucket
                 Resource:
                   Fn::Join:
-                    - ''
-                    - - 'arn:aws:s3:::'
+                    - ""
+                    - - "arn:aws:s3:::"
                       - Fn::GetAtt: [SafyaStack, Outputs.EventsBucketName]
               - Effect: Allow
                 Action:
@@ -98,46 +90,38 @@ Resources:
                   - s3:GetObject
                 Resource:
                   Fn::Join:
-                    - ''
-                    - - 'arn:aws:s3:::'
+                    - ""
+                    - - "arn:aws:s3:::"
                       - Fn::GetAtt: [SafyaStack, Outputs.EventsBucketName]
-                      - '/*'
+                      - "/*"
               - Effect: Allow
-                Action: 'dynamodb:*'
+                Action: "dynamodb:*"
                 Resource:
                   - Fn::Join:
-                    - ''
-                    - - 'arn:aws:dynamodb:'
+                    - ""
+                    - - "arn:aws:dynamodb:"
                       - Ref: AWS::Region
-                      - ':'
+                      - ":"
                       - Ref: AWS::AccountId
-                      - ':table/'
+                      - ":table/"
                       - Fn::GetAtt: [SafyaStack, Outputs.PartitionsTableName]
                   - Fn::Join:
-                    - ''
-                    - - 'arn:aws:dynamodb:'
+                    - ""
+                    - - "arn:aws:dynamodb:"
                       - Ref: AWS::Region
-                      - ':'
+                      - ":"
                       - Ref: AWS::AccountId
-                      - ':table/'
+                      - ":table/"
                       - Fn::GetAtt: [SafyaStack, Outputs.ConsumersTableName]
 Outputs:
   DeploymentBucketName:
     Description: Deployment bucket name
     Value:
       Ref: DeploymentBucket
-  PartitionsTableName:
-    Description: Partitions table name
+  SafyaConfig:
+    Description: Safya config
     Value:
-      Fn::GetAtt: [SafyaStack, Outputs.PartitionsTableName]
-  ConsumersTableName:
-    Description: Consumers table name
-    Value:
-      Fn::GetAtt: [SafyaStack, Outputs.ConsumersTableName]
-  EventsBucketName:
-    Description: Events bucket name
-    Value:
-      Fn::GetAtt: [SafyaStack, Outputs.EventsBucketName]
+      Fn::GetAtt: [SafyaStack, Outputs.ConfigString]
   ProducerTestFunctionName:
     Description: Producer test function name
     Value:

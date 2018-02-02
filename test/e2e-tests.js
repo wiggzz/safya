@@ -8,23 +8,20 @@ log.setLevel('debug');
 describe('end to end', function () {
   this.timeout(100000);
 
-  let eventsBucket, partitionsTable, consumersTable;
+  let safyaConfig;
   let consumer, safya;
 
   before(async () => {
-    ({ eventsBucket, partitionsTable, consumersTable } = await testInfra.describeE2EStack());
+    ({ safyaConfig } = await testInfra.describeE2EStack());
 
     safya = new Safya({
-      eventsBucket,
-      partitionsTable,
+      config: safyaConfig,
       preferredPartitioner: new Partitioner({ partitionCount: 1 })
     });
 
     consumer = new SafyaConsumer({
       name: 'test-consumer',
-      eventsBucket,
-      consumersTable,
-      partitionsTable
+      config: safyaConfig
     });
   });
 
@@ -112,9 +109,7 @@ describe('end to end', function () {
 
       const consumer2 = new SafyaConsumer({
         name: 'test-consumer',
-        eventsBucket,
-        consumersTable,
-        partitionsTable
+        config: safyaConfig
       });
 
       const [ partitionId ] = await consumer.getPartitionIds();

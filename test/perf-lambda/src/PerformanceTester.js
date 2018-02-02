@@ -2,15 +2,12 @@ const { Safya, SafyaConsumer, Partitioner } = require('../../../src');
 const crypto = require('crypto');
 
 const safyaFactory = () => new Safya({
-  eventsBucket: process.env.EVENTS_BUCKET,
-  partitionsTable: process.env.PARTITIONS_TABLE,
+  config: process.env.SAFYA_CONFIG,
   preferredPartitioner: new Partitioner({ partitionCount: 10 })
 });
 
 const safyaConsumerFactory = () => new SafyaConsumer({
-  eventsBucket: process.env.EVENTS_BUCKET,
-  partitionsTable: process.env.PARTITIONS_TABLE,
-  consumersTable: process.env.CONSUMERS_TABLE,
+  config: process.env.SAFYA_CONFIG,
   name: 'performance-test-lambda-consumer'
 });
 

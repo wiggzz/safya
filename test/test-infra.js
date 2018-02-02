@@ -42,12 +42,6 @@ const deployE2EStack = async () => {
     await cloudformation.waitForAsync(shouldUpdateStack ? 'stackUpdateComplete' : 'stackCreateComplete', {
       StackName: STACK_NAME
     });
-  } else {
-    log.debug('deleting change set');
-    await cloudformation.deleteChangeSet({
-      StackName: STACK_NAME,
-      ChangeSetName: CHANGE_SET_NAME
-    });
   }
 
   return await e2eStackPhysicalIds(STACK_NAME);
@@ -62,14 +56,10 @@ const e2eStackPhysicalIds = async (stackName) => {
     StackName: stackName
   });
 
-  const partitionsTable = outputForStackWithOutputKey(Stacks[0], 'PartitionsTableName');
-  const consumersTable = outputForStackWithOutputKey(Stacks[0], 'ConsumersTableName');
-  const eventsBucket = outputForStackWithOutputKey(Stacks[0], 'EventsBucketName');
+  const safyaConfig = outputForStackWithOutputKey(Stacks[0], 'ConfigString');
 
   const ids = {
-    partitionsTable,
-    consumersTable,
-    eventsBucket
+    safyaConfig
   };
 
   return ids;
@@ -89,6 +79,7 @@ const changeSetReadyAndWillProduceChanges = async (stackName, changeSetName) => 
       ChangeSetName: changeSetName
     });
     if (Status === 'FAILED' && StatusReason === 'The submitted information didn\'t contain changes. Submit different information to create a change set.') {
+      log.debug('deleting change set');
       // no changes, delete change set
       await cloudformation.deleteChangeSet({
         StackName: stackName,
@@ -192,12 +183,6 @@ const deployPerfStack = async () => {
     await cloudformation.waitForAsync(shouldUpdateStack ? 'stackUpdateComplete' : 'stackCreateComplete', {
       StackName: STACK_NAME
     });
-  } else {
-    log.debug('deleting change set');
-    await cloudformation.deleteChangeSet({
-      StackName: STACK_NAME,
-      ChangeSetName: CHANGE_SET_NAME
-    });
   }
 
   if (!shouldUpdateStack) {
@@ -218,16 +203,12 @@ const perfStackPhysicalIds = async (stackName) => {
   });
 
   const deploymentBucket = outputForStackWithOutputKey(Stacks[0], 'DeploymentBucketName');
-  const partitionsTable = outputForStackWithOutputKey(Stacks[0], 'PartitionsTableName');
-  const consumersTable = outputForStackWithOutputKey(Stacks[0], 'ConsumersTableName');
-  const eventsBucket = outputForStackWithOutputKey(Stacks[0], 'EventsBucketName');
+  const safyaConfig = outputForStackWithOutputKey(Stacks[0], 'SafyaConfig');
   const producerTestFunction = outputForStackWithOutputKey(Stacks[0], 'ProducerTestFunctionName');
   const consumerTestFunction = outputForStackWithOutputKey(Stacks[0], 'ConsumerTestFunctionName');
   return {
     deploymentBucket,
-    partitionsTable,
-    consumersTable,
-    eventsBucket,
+    safyaConfig,
     producerTestFunction,
     consumerTestFunction
   };

@@ -11,17 +11,27 @@ class Safya {
   constructor({
     eventsBucket,
     partitionsTable,
+    config = '{}',
     storage = s3,
     preferredPartitioner
   }) {
-    this.bucket = eventsBucket;
+    const configObject = JSON.parse(config);
+
+    this.bucket = eventsBucket || configObject.eventsBucket;
+    this.partitionsTable = partitionsTable || configObject.partitionsTable;
+
+    if (!this.bucket) {
+      throw new Error('Parameter eventsBucket is required');
+    }
+
+    if (!this.partitionsTable) {
+      throw new Error('Paramete partitionsTable is required');
+    }
+
+    const configPartitioner = configObject.preferredPartitionCount ? new Partitioner({partitionCount: configObject.preferredPartitionCount}) : undefined;
+    this.preferredPartitioner = preferredPartitioner || configPartitioner;
     this.storage = storage;
-    this.partitionsTable = partitionsTable;
-    this.preferredPartitioner = preferredPartitioner;
     this.partitioner = null;
-    this.stats = {
-      consistencyFailures: 0
-    };
   }
 
   async writeEvent(partitionKey, data) {

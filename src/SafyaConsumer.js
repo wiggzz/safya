@@ -7,22 +7,41 @@ const Safya = require('./Safya');
 const { contentDigest } = require('./helpers');
 
 class SafyaConsumer {
-  constructor({ eventsBucket, partitionsTable, consumersTable, name, storage = s3, lastActiveExpirationMs = 5000 } = {}) {
-    if (!eventsBucket) {
+  constructor({
+    eventsBucket,
+    partitionsTable,
+    consumersTable,
+    name,
+    config = '{}',
+    storage = s3,
+    lastActiveExpirationMs = 5000
+  } = {}) {
+    const configObject = JSON.parse(config);
+
+    this.bucket = eventsBucket || configObject.eventsBucket;
+    this.consumersTable = consumersTable || configObject.consumersTable;
+    this.partitionsTable = partitionsTable || configObject.partitionsTable;
+    this.consumerName = name;
+
+    if (!this.bucket) {
       throw new Error('Parameter eventsBucket is required');
     }
 
-    if (!name) {
+    if (!this.consumersTable) {
+      throw new Error('Parameter consumersTable is required');
+    }
+
+    if (!this.partitionsTable) {
+      throw new Error('Parameter partitionsTable is required')
+    }
+
+    if (!this.consumerName) {
       throw new Error('Parameter name is required');
     }
 
     this.storage = storage
-    this.bucket = eventsBucket;
-    this.consumerName = name;
-    this.partitionTable = partitionsTable;
-    this.consumersTable = consumersTable;
     this.lastActiveExpirationMs = lastActiveExpirationMs;
-    this.safya = new Safya({ eventsBucket, partitionsTable, storage });
+    this.safya = new Safya({ eventsBucket: this.bucket, partitionsTable: this.partitionsTable, storage });
     this.threadId = crypto.randomBytes(32).toString('hex');
   }
 

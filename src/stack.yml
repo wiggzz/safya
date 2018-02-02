@@ -1,5 +1,7 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Safya unified log stack
+Metadata:
+  Version: "0.1.0"
 Parameters:
   AutoScalingEnabled:
     Type: String
@@ -15,11 +17,15 @@ Parameters:
   AutoScalingMinCapacity:
     Type: Number
     Default: 5
-    Description: If auto-scaling is enabled, the minimum capacity to scale dynamodb up to
+    Description: If auto-scaling is enabled, the minimum capacity to scale dynamodb down to
   InitialProvisionedCapacity:
     Type: Number
     Default: 5
     Description: The initial capacity to provision the dynamodb tables with
+  PreferredPartitionCount:
+    Type: Number
+    Default: 10
+    Description: Preferred number of partitions (this is only guaranteed in some circumstances).
 Conditions:
   ProvisionAutoScaling:
     Fn::Equals:
@@ -187,7 +193,7 @@ Resources:
     Condition: ProvisionAutoScaling
     Properties:
       AssumeRolePolicyDocument:
-        Version: '2012-10-17'
+        Version: "2012-10-17"
         Statement:
           - Effect: Allow
             Principal:
@@ -198,7 +204,7 @@ Resources:
       Policies:
         - PolicyName: PerformanceTestLambda
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: "2012-10-17"
             Statement:
               - Effect: Allow
                 Action:
@@ -209,7 +215,7 @@ Resources:
                   - cloudwatch:GetMetricStatistics
                   - cloudwatch:SetAlarmState
                   - cloudwatch:DeleteAlarms
-                Resource: '*'
+                Resource: "*"
   EventsBucket:
     Type: AWS::S3::Bucket
 Outputs:
@@ -225,3 +231,7 @@ Outputs:
     Description: Events bucket name
     Value:
       Ref: EventsBucket
+  ConfigString:
+    Description: "Safya configuration string. Use this for constructing a new Safya object: new Safya({ config: <SafyaConfig> })"
+    Value:
+      Fn::Sub: "{ \"partitionsTable\": \"${PartitionsTable}\", \"consumersTable\":\"${ConsumersTable}\", \"eventsBucket\":\"${EventsBucket}\", \"preferredPartitionCount\": ${PreferredPartitionCount} }"

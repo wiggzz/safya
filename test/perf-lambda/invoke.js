@@ -57,13 +57,11 @@ const runProducerTest = async ({ functionName, eventSizeBytes, eventsPerSecond, 
   };
 };
 
-const runConsumerTest = async ({ functionName, partitionsTable, consumersTable, eventsBucket, readCountPerLambda }) => {
+const runConsumerTest = async ({ functionName, safyaConfig, readCountPerLambda }) => {
   const startTime = Date.now();
 
   const consumer = new SafyaConsumer({
-    partitionsTable,
-    consumersTable,
-    eventsBucket,
+    config: safyaConfig,
     name: 'performance-test-lambda-consumer'
   });
 
