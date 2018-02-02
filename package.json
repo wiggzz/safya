@@ -1,10 +1,14 @@
 {
   "name": "safya",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A simple, scalable, unified log powered by AWS S3 and DynamoDB",
-  "main": "index.js",
+  "main": "src",
   "license": "MIT",
-  "author": "Will James",
+  "author": {
+    "name": "Will James",
+    "email": "jameswt@gmail.com"
+  },
+  "homepage": "https://github.com/wiggzz/safya",
   "dependencies": {
     "aws-sdk": "^2.183.0",
     "big-integer": "^1.6.26",
