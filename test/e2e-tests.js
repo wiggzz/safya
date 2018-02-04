@@ -10,13 +10,17 @@ describe('end to end', function () {
 
   let safyaConfig;
   let consumer, safya;
+  let mockSns = {
+    publishAsync: sinon.spy()
+  };
 
   before(async () => {
-    ({ safyaConfig } = await testInfra.describeE2EStack());
+    ({ safyaConfig } = await testInfra.describeTestStack());
 
     safya = new Safya({
       config: safyaConfig,
-      preferredPartitioner: new Partitioner({ partitionCount: 1 })
+      maxNotifyLatencyMs: 1000,
+      notifications: mockSns
     });
 
     consumer = new SafyaConsumer({
@@ -25,16 +29,11 @@ describe('end to end', function () {
     });
   });
 
-  after(async () => {
-    const [ partitionId ] = await consumer.getPartitionIds();
-    await consumer.readEvents({ partitionId });
-  });
-
   describe('the consumer', () => {
     it('should be able to read events after they are produced', async () => {
       await safya.writeEvent('id-12345', 'foo');
 
-      const [ partitionId ] = await consumer.getPartitionIds();
+      const partitionId = await consumer.getPartitionId({ partitionKey: 'id-12345' });
 
       const events = [];
       await consumer.readEvents({ partitionId }, events.push.bind(events));
@@ -45,7 +44,7 @@ describe('end to end', function () {
     it('should not read the same event twice', async () => {
       await safya.writeEvent('id-12345', 'blah');
 
-      const [ partitionId ] = await consumer.getPartitionIds();
+      const partitionId = await consumer.getPartitionId({ partitionKey: 'id-12345' });
       await consumer.readEvents({ partitionId });
       const events = [];
       await consumer.readEvents({ partitionId }, events.push.bind(events));
@@ -68,7 +67,7 @@ describe('end to end', function () {
         thread('3')()
       ]);
 
-      const [ partitionId ] = await consumer.getPartitionIds();
+      const partitionId = await consumer.getPartitionId({ partitionKey: 'id-12345' });
       await consumer.readEvents({
         partitionId,
         count: 60
@@ -94,7 +93,7 @@ describe('end to end', function () {
 
       await safya.writeEvent('id-12345', 'bingo success');
 
-      const [ partitionId ] = await consumer.getPartitionIds();
+      const partitionId = await consumer.getPartitionId({ partitionKey: 'id-12345' });
       const events = [];
       await consumer.readEvents({ partitionId }, events.push.bind(events));
 
@@ -112,7 +111,7 @@ describe('end to end', function () {
         config: safyaConfig
       });
 
-      const [ partitionId ] = await consumer.getPartitionIds();
+      const partitionId = await consumer.getPartitionId({ partitionKey: 'id-12345' });
       const events = []
       await Promise.all([
         consumer.readEvents({ partitionId }, events.push.bind(events)),
@@ -120,6 +119,12 @@ describe('end to end', function () {
       ]);
 
       expect(events).to.have.lengthOf(5);
+    });
+  });
+
+  describe('the producer', () => {
+    it('should only notify once in the period of maxLatencyMs milliseconds', async () => {
+
     });
   });
 });

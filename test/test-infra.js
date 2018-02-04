@@ -4,7 +4,7 @@ const path = require('path');
 const _ = require('lodash');
 const log = require('loglevel');
 const { promisifyAll } = require('bluebird');
-const uploadPerfLambda = require('./perf-lambda/upload');
+const uploadTestLambda = require('./test-lambdas/upload');
 log.setLevel('debug');
 
 AWS.config.region = 'us-east-1';
@@ -12,58 +12,7 @@ AWS.config.region = 'us-east-1';
 const cloudformation = promisifyAll(new AWS.CloudFormation());
 const s3 = promisifyAll(new AWS.S3());
 
-const E2E_STACK_NAME = 'safya-e2e-tests';
-const PERF_STACK_NAME = 'safya-perf-tests';
-
-const deployE2EStack = async () => {
-  const STACK_NAME = E2E_STACK_NAME;
-  const CHANGE_SET_NAME = 'safya-e2e-tests-changeset';
-
-  const TemplateBody = fs.readFileSync(path.resolve(__dirname, path.join('..','src','stack.yml')), 'utf8');
-
-  const shouldUpdateStack = await stackIsUpdatable(STACK_NAME);
-
-  log.debug('creating changeset');
-  const changeSet = await cloudformation.createChangeSetAsync({
-    StackName: STACK_NAME,
-    ChangeSetName: CHANGE_SET_NAME,
-    ChangeSetType: shouldUpdateStack ? 'UPDATE' : 'CREATE',
-    TemplateBody,
-    Capabilities: ['CAPABILITY_IAM'],
-  });
-
-  if (await changeSetReadyAndWillProduceChanges(STACK_NAME, CHANGE_SET_NAME)) {
-    log.debug('executing changeset');
-    await cloudformation.executeChangeSetAsync({
-      StackName: STACK_NAME,
-      ChangeSetName: CHANGE_SET_NAME
-    });
-
-    await cloudformation.waitForAsync(shouldUpdateStack ? 'stackUpdateComplete' : 'stackCreateComplete', {
-      StackName: STACK_NAME
-    });
-  }
-
-  return await e2eStackPhysicalIds(STACK_NAME);
-};
-
-const describeE2EStack = () => {
-  return e2eStackPhysicalIds(E2E_STACK_NAME);
-}
-
-const e2eStackPhysicalIds = async (stackName) => {
-  const { Stacks } = await cloudformation.describeStacksAsync({
-    StackName: stackName
-  });
-
-  const safyaConfig = outputForStackWithOutputKey(Stacks[0], 'ConfigString');
-
-  const ids = {
-    safyaConfig
-  };
-
-  return ids;
-}
+const STACK_NAME = 'safya-tests';
 
 const changeSetReadyAndWillProduceChanges = async (stackName, changeSetName) => {
   try {
@@ -120,17 +69,17 @@ const stackIsUpdatable = async (stackName) => {
   }
 }
 
-const deployPerfStack = async () => {
-  const STACK_NAME = PERF_STACK_NAME;
-  const CHANGE_SET_NAME = 'safya-perf-tests-changeset';
+const deployTestStack = async () => {
+  const CHANGE_SET_NAME = 'safya-tests-changeset';
 
-  const createTemplate = fs.readFileSync(path.resolve(__dirname, 'perf-stack-create.yml'), 'utf8');
-  const updateTemplate = fs.readFileSync(path.resolve(__dirname, 'perf-stack-update.yml'), 'utf8');
+  const createTemplate = fs.readFileSync(path.resolve(__dirname, 'stack-create.yml'), 'utf8');
+  const updateTemplate = fs.readFileSync(path.resolve(__dirname, 'stack-update.yml'), 'utf8');
   const safyaTemplate = fs.readFileSync(path.resolve(__dirname, path.join('..','src','stack.yml')), 'utf8');
 
   const shouldUpdateStack = await stackIsUpdatable(STACK_NAME);
 
-  let lambdaPackageKey = `${new Date().toISOString()}/safya-perf-package.zip`;
+  let lambdaPackageKey = `${new Date().toISOString()}/safya-test-package.zip`;
+  let safyaStackKey = `${new Date().toISOString()}/safya-test-stack.yml`;
   let usePreviousLambdaPackage = false;
 
   if (shouldUpdateStack) {
@@ -144,12 +93,12 @@ const deployPerfStack = async () => {
     // upload safya stack template to s3 bucket
     await s3.putObjectAsync({
       Bucket: deploymentBucket,
-      Key: 'safya-perf-stack.yml',
+      Key: safyaStackKey,
       Body: safyaTemplate
     });
 
     // deploy lambda resources
-    const packageChanged = await uploadPerfLambda(deploymentBucket, lambdaPackageKey);
+    const packageChanged = await uploadTestLambda(deploymentBucket, lambdaPackageKey);
 
     if (!packageChanged && previousLambdaPackageParameter) {
       log.debug('No changes to lambda package, reusing previous deployment package.');
@@ -169,6 +118,10 @@ const deployPerfStack = async () => {
         ParameterKey: 'LambdaPackageS3Key',
         ParameterValue: usePreviousLambdaPackage ? undefined : lambdaPackageKey,
         UsePreviousValue: usePreviousLambdaPackage ? true : false
+      },
+      {
+        ParameterKey: 'SafyaStackS3Key',
+        ParameterValue: safyaStackKey
       }
     ] : undefined
   });
@@ -187,17 +140,17 @@ const deployPerfStack = async () => {
 
   if (!shouldUpdateStack) {
     // redeploy to finalise, as on create, we only deploy deployment bucket
-    return deployPerfStack();
+    return deployTestStack();
   } else {
-    return perfStackPhysicalIds(STACK_NAME);
+    return testStackPhysicalIds(STACK_NAME);
   }
 }
 
-const describePerfStack = () => {
-  return perfStackPhysicalIds(PERF_STACK_NAME);
+const describeTestStack = () => {
+  return testStackPhysicalIds(STACK_NAME);
 };
 
-const perfStackPhysicalIds = async (stackName) => {
+const testStackPhysicalIds = async (stackName) => {
   const { Stacks } = await cloudformation.describeStacksAsync({
     StackName: stackName
   });
@@ -220,16 +173,10 @@ const exitWithError = (err) => {
 }
 
 if (require.main === module) {
-  if (process.argv[2] === 'deploy-e2e') {
-    deployE2EStack().then(console.log).catch(exitWithError);
-  } else if (process.argv[2] === 'deploy-perf') {
-    deployPerfStack().then(console.log).catch(exitWithError);
-  }
+  deployTestStack().then(console.log).catch(exitWithError);
 }
 
 module.exports = {
-  deployE2EStack,
-  deployPerfStack,
-  describeE2EStack,
-  describePerfStack
+  deployTestStack,
+  describeTestStack
 };

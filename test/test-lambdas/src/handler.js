@@ -29,7 +29,14 @@ const consumerTestThread = function(event, context, callback) {
   .catch((err) => callback(err));
 }
 
+const eventHandler = function(event, context, callback) {
+  console.log('Handling event', event);
+
+  callback();
+}
+
 module.exports = {
   producerTestThread,
-  consumerTestThread
+  consumerTestThread,
+  eventHandler
 }

@@ -3,6 +3,7 @@ const log = require("loglevel");
 const s3 = require("./s3-storage");
 const dynamoDb = require("./dynamodb");
 const Partitioner = require("./Partitioner");
+const Notifier = require('./Notifier');
 const { contentDigest, retryOnFailure } = require("./helpers");
 
 const PARTITIONER_KEY = "meta_partitioner";
@@ -13,7 +14,8 @@ class Safya {
     partitionsTable,
     config = '{}',
     storage = s3,
-    preferredPartitioner
+    preferredPartitioner,
+    notifier
   }) {
     const configObject = JSON.parse(config);
 
@@ -25,12 +27,13 @@ class Safya {
     }
 
     if (!this.partitionsTable) {
-      throw new Error('Paramete partitionsTable is required');
+      throw new Error('Parameter partitionsTable is required');
     }
 
     const configPartitioner = configObject.preferredPartitionCount ? new Partitioner({partitionCount: configObject.preferredPartitionCount}) : undefined;
     this.preferredPartitioner = preferredPartitioner || configPartitioner;
     this.storage = storage;
+    this.notifier = notifier || new Notifier({ topicArn: configObject.eventsTopicArn });
     this.partitioner = null;
   }
 
@@ -51,22 +54,12 @@ class Safya {
       Body: data
     });
 
-    return key;
+    await this.notifier.notifyForEvent({ partitionKey });
   }
 
   async getPartitionId({ partitionKey, createIfNotExists = false }) {
-    return retryOnFailure(
-      async () => {
-        const partitioner = await this.getPartitioner({ createIfNotExists });
-        return partitioner.partitionIdForKey(partitionKey);
-      },
-      {
-        retries: 10,
-        predicate: err => err.code === "ConditionalCheckFailedException",
-        messageOnFailure:
-          "Unable to obtain partition id, maximum retries reached"
-      }
-    );
+    const partitioner = await this.getPartitioner({ createIfNotExists });
+    return partitioner.partitionIdForKey(partitionKey);
   }
 
   async getSequenceNumber({ partitionId }) {
@@ -132,7 +125,17 @@ class Safya {
         );
       }
     } else if (createIfNotExists) {
-      this.partitioner = await this.initializePartitioner();
+      await retryOnFailure(
+        async () => {
+          this.partitioner = await this.initializePartitioner();
+        },
+        {
+          retries: 10,
+          predicate: err => err.code === "ConditionalCheckFailedException",
+          messageOnFailure:
+            "Unable to initialize partitioner, maximum retries reached"
+        }
+      );
     } else {
       throw new Error('Unable to obtain partitioner: No partitioner has been initialized yet for this Safya stack.');
     }

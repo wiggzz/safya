@@ -23,22 +23,22 @@ Currently, this code is a work in progress which means it'll be hard for you to 
 
 # Discussion
 
-The PUT operation will be:
+The PRODUCE operation will be:
 
- 1. Get sequence number for partition from DynamoDB
- 2. Atomically increment sequence number for partition.
- 3. Write /events/{partitionId}/{sequenceNumber}
+1. Get sequence number for partition from DynamoDB
+2. Atomically increment sequence number for partition.
+3. Write /events/{partitionId}/{sequenceNumber}
 
 Issues with this: if step 3 fails, we have an empty item. Is that an issue? Not really
 
-For consumption of any given partition we have:
+The CONSUME operation of any given partition is:
 
- 1. Get consumer state for this consumer and this partition (seq. number, whether the consumer is Active or Inactive)
- 2. If the consumer is Inactive, we know no one else is currently reading from the stream. If the consumer is Active (and the last updated is within a reasonable expiration time), someone else is reading currently, so stop.
- 3. Check if the consumer is up to date (is the partition sequence number the same as the consumer sequence number). If the consumer is up to date, mark as Inactive, and stop
- 4. If the consumer is not up to date, read next item(s).
- 5. On successful processing of the item(s), increment the sequence number. Go back to 3.
- 6. On completion of reading, mark consumer Inactive.
+1. Get consumer state for this consumer and this partition (seq. number, whether the consumer is Active or Inactive)
+2. If the consumer is Inactive, we know no one else is currently reading from the stream. If the consumer is Active (and the last updated is within a reasonable expiration time), someone else is reading currently, so stop.
+3. Check if the consumer is up to date (is the partition sequence number the same as the consumer sequence number). If the consumer is up to date, mark as Inactive, and stop
+4. If the consumer is not up to date, read next item(s).
+5. On successful processing of the item(s), increment the sequence number. Go back to 3.
+6. On completion of reading, mark consumer Inactive.
 
 We'll still have orchestration issues for long running consumer process, but it can be handled by at the end of a consumer lambda finishing, if we still haven't caught up, trigger a notification for initiating another consumer.
 
@@ -62,3 +62,22 @@ Items in the Consumers table will be of the form
 }
 
 with a primary key of Id and a sort/range key of ConsumerId
+
+## Real-time consumption
+
+There are several ways of thinking about this. Ideally, as soon as an event is produced, the consumers should be informed, and they can read from the stream and get themselves up to date. In practice, this is more difficult to achieve across a scalable architecture. Kafka has a long-poll solution which I really like. Kinesis has a 1 second poll which isn't as good in my opinion. I would like to be able to trigger a consumer lambda in a configurable way - i.e. the user can specify what the maximum latency is. The trick is to be able to debounce incoming messages and trigger the consumers at the right point in time. Doing a distributed debounce though will require essentially doubling the write/read load on dynamodb - or does it?
+
+Can we put some info in the production partitions table which will help us debounce the message triggers? Debounce requires waiting. One way to implement would be to have each production of a message kick of a debounce check - if it has been longer than X ms since the last 'trigger', trigger immediately. If it has been less, we need to wait - but we only want one waiter so we'll need a way to tell other new waiters who are created when new messages are created inside the wait time that we wont need them.
+
+We could put a `triggerTime` entry in the production table, against partitionId, which is a timestamp when we want the next trigger to occur. If a message arrives and the previous `triggerTime` value was less than now (ie the previous message has been triggered), then we set the `triggerTime` to now + some delay, and wait until that point in time. If more messages have entered in that time, we trigger again. Otherwise, we stop. So, thinking through that a bit more, in pseudo code, the TRIGGER operation is (which will be interleaved with PRODUCE):
+
+1. We should have `notifyWaitStartTime` from the PRODUCE operation above (the last event time before this event).
+2. If `notifyWaitStartTime` is less than `maxLatencyMs` ago, we know the previous waiter is still waiting for new events, and they will capture our event when they finish. We don't update `notifyWaitStartTime`.
+3. If `notifyWaitStartTime` is greater than `maxLatencyMs` ago, we know that the previous waiter has stopped waiting. Therefore, trigger a new notification on this partition, update `notifyWaitStartTime` to now, and wait for `maxLatencyMs`.
+4. After waiting, check for any new messages. If there are more, trigger a notification, and stop.
+
+Are there race conditions here? Yes. If after the timer finishes, we have an event produced. Then the producer of that event will check the time, and determine that they need to trigger a notification. They will then trigger a notification, but the waiter may also trigger a new notification because the timer has just ended. This isn't too big a deal because one of the consumer threads on the other side of the notification will get a lock and begin reading, and I suppose it is better to have two notifications than none.
+
+The other issue is, if a consumer fails during consumption, then that event won't be read in real-time - although SNS will provide retrying on lambdas, so that should be ok - it will most likely only happen as a result of a logic error (not operational error).
+
+Let's test it!

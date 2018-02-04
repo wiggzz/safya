@@ -41,7 +41,11 @@ class SafyaConsumer {
 
     this.storage = storage
     this.lastActiveExpirationMs = lastActiveExpirationMs;
-    this.safya = new Safya({ eventsBucket: this.bucket, partitionsTable: this.partitionsTable, storage });
+    this.safya = new Safya({
+      eventsBucket: this.bucket,
+      partitionsTable: this.partitionsTable,
+      config,
+      storage });
     this.threadId = crypto.randomBytes(32).toString('hex');
   }
 
@@ -49,6 +53,10 @@ class SafyaConsumer {
     const partitioner = await this.safya.getPartitioner();
 
     return partitioner.getPartitionIds();
+  }
+
+  async getPartitionId({ partitionKey }) {
+    return await this.safya.getPartitionId({ partitionKey });
   }
 
   async getSequenceNumber({ partitionId }) {
@@ -69,7 +77,42 @@ class SafyaConsumer {
     return 0;
   }
 
-  async setSequenceNumber({ partitionId, sequenceNumber }) {
+  async readEvents({ partitionId, count = 20 } = {}, eventProcessor) {
+    const noOpProcessor = () => {};
+    const processEvent = eventProcessor || noOpProcessor;
+
+    // i hate exception handling in javascript.
+    try {
+      const {
+        sequenceNumber,
+        consumptionCount
+      } = await this._withConsumerLock(
+        { partitionId, count, processEvent },
+        this._readEventsUnsafe.bind(this, { partitionId, count, processEvent })
+      );
+
+      const partitionSequenceNumber = await this.safya.getSequenceNumber({ partitionId });
+      const eventsRemaining = partitionSequenceNumber ?
+        partitionSequenceNumber - sequenceNumber - consumptionCount
+        : 0;
+
+      return {
+        eventsRead: consumptionCount,
+        done: eventsRemaining === 0
+      };
+    } catch (err) {
+      if (err.code === 'ConsumerLockFailedException') {
+        return {
+          done: true,
+          eventsRead: 0
+        };
+      } else {
+        throw err
+      }
+    }
+  }
+
+  async _setSequenceNumber({ partitionId, sequenceNumber }) {
     const params = {
       TableName: this.consumersTable,
       Key: {
@@ -88,52 +131,31 @@ class SafyaConsumer {
     await dynamoDb.updateAsync(params);
   }
 
-  async readEvents({ partitionId, count = 20 } = {}, eventProcessor) {
-    // i hate exception handling in javascript.
-    try {
-      return await this.withConsumerLock({ partitionId }, async () => {
+  async _readEventsUnsafe({ partitionId, count, processEvent } = {}) {
+    let consumptionCount = 0;
+    const sequenceNumber = await this.getSequenceNumber({ partitionId });
 
-        const sequenceNumber = await this.getSequenceNumber({ partitionId });
+    while (consumptionCount < count) {
+      const shouldContinue = await this._readOnce({
+          partitionId,
+          sequenceNumber: sequenceNumber + consumptionCount,
+          processEvent
+        });
 
-        log.debug('sequence number', sequenceNumber);
-
-        const noOpProcessor = () => {};
-        const processEvent = eventProcessor || noOpProcessor;
-
-        let consumptionCount = 0;
-        while (consumptionCount < count) {
-          const shouldContinue = await this.readOnce({
-              partitionId,
-              sequenceNumber: sequenceNumber + consumptionCount,
-              processEvent
-            });
-
-          if (shouldContinue) {
-            consumptionCount++;
-            await this.setSequenceNumber({ partitionId, sequenceNumber: sequenceNumber + consumptionCount });
-          } else {
-            break;
-          }
-        }
-
-        const partitionSequenceNumber = await this.safya.getSequenceNumber({ partitionId });
-
-        return {
-          eventsRemaining: partitionSequenceNumber - sequenceNumber - consumptionCount
-        };
-      });
-    } catch (err) {
-      if (err.code === 'ConsumerLockFailedException') {
-        return [];
+      if (shouldContinue) {
+        consumptionCount++;
+        await this._setSequenceNumber({ partitionId, sequenceNumber: sequenceNumber + consumptionCount });
       } else {
-        throw err;
+        break;
       }
     }
+
+    return { sequenceNumber, consumptionCount };
   }
 
-  async withConsumerLock({ partitionId }, closure) {
+  async _withConsumerLock({ partitionId }, closure) {
     try {
-      await this.obtainConsumerLock({ partitionId });
+      await this._obtainConsumerLock({ partitionId });
     } catch (err) {
       if (err.code === 'ConditionalCheckFailedException') {
         log.debug('Couldn\'t obtain consumer lock', this.threadId.slice(0, 6), partitionId);
@@ -152,11 +174,11 @@ class SafyaConsumer {
     } catch (err) {
       throw err;
     } finally {
-      await this.releaseConsumerLock({ partitionId });
+      await this._releaseConsumerLock({ partitionId });
     }
   }
 
-  async obtainConsumerLock({ partitionId }) {
+  async _obtainConsumerLock({ partitionId }) {
     log.debug('obtaining consumer lock', this.threadId.slice(0, 6), partitionId);
     const now = Date.now();
     const params = {
@@ -177,7 +199,7 @@ class SafyaConsumer {
     await dynamoDb.updateAsync(params);
   }
 
-  async releaseConsumerLock({ partitionId }) {
+  async _releaseConsumerLock({ partitionId }) {
     log.debug('releasing consumer lock', this.threadId.slice(0, 6), partitionId);
     const params = {
       TableName: this.consumersTable,
@@ -195,9 +217,9 @@ class SafyaConsumer {
     await dynamoDb.updateAsync(params);
   }
 
-  async readOnce({ partitionId, sequenceNumber, retries = 3, processEvent }) {
+  async _readOnce({ partitionId, sequenceNumber, processEvent }) {
     try {
-      const event = await this.readEventFromS3({ partitionId, sequenceNumber });
+      const event = await this._readEventFromS3({ partitionId, sequenceNumber });
 
       await processEvent(event);
 
@@ -205,7 +227,7 @@ class SafyaConsumer {
     } catch (err) {
       if (err.code === 'NoSuchKey') {
         const partitionSequenceNumber = await this.safya.getSequenceNumber({ partitionId });
-        if (partitionSequenceNumber <= sequenceNumber) {
+        if (!partitionSequenceNumber || partitionSequenceNumber <= sequenceNumber) {
           log.debug(`${partitionId}:${sequenceNumber} doesn\'t exist yet`);
           return false;
         } else {
@@ -213,17 +235,12 @@ class SafyaConsumer {
           return true;
         }
       } else {
-        log.debug(err);
-        if (retries > 0) {
-          return this.readOnce({ partitionId, sequenceNumber, retries: retries - 1, processEvent });
-        } else {
-          throw err;
-        }
+        throw err
       }
     }
   }
 
-  async readEventFromS3({ partitionId, sequenceNumber }) {
+  async _readEventFromS3({ partitionId, sequenceNumber }) {
     const key = `events/${partitionId}/${sequenceNumber}`;
 
     log.debug('s3 get object', key, 'from bucket', this.bucket);

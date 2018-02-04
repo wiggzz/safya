@@ -1,9 +1,12 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Stack for performance testing Safya
+Description: Stack for testing Safya
 Parameters:
   LambdaPackageS3Key:
     Type: String
     Description: Key for the lambda package
+  SafyaStackS3Key:
+    Type: String
+    Description: Key for the safya stack to embded
 Resources:
   DeploymentBucket:
     Type: AWS::S3::Bucket
@@ -15,7 +18,8 @@ Resources:
           - ""
           - - "https://s3.amazonaws.com/"
             - Ref: DeploymentBucket
-            - "/safya-perf-stack.yml"
+            - '/'
+            - Ref: SafyaStackS3Key
       Parameters:
         InitialProvisionedCapacity: 100
   ProducerTestFunction:
@@ -54,6 +58,41 @@ Resources:
       Runtime: nodejs6.10
       Timeout: 300
       MemorySize: 1024
+  EventHandlerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket:
+          Ref: DeploymentBucket
+        S3Key:
+          Ref: LambdaPackageS3Key
+      Environment:
+        Variables:
+          SAFYA_CONFIG:
+            Fn::GetAtt: [SafyaStack, Outputs.ConfigString]
+      Handler: handler.eventHandler
+      Role:
+        Fn::GetAtt: [PerformanceTestFunctionRole, Arn]
+      Runtime: nodejs6.10
+      Timeout: 300
+      MemorySize: 1024
+  EventHandlerNotifyPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      Principal: sns.amazonaws.com
+      SourceArn:
+        Fn::GetAtt: [SafyaStack, Outputs.EventsTopicArn]
+      FunctionName:
+        Fn::GetAtt: [EventHandlerFunction, Arn]
+  EventSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Endpoint:
+        Fn::GetAtt: [EventHandlerFunction, Arn]
+      Protocol: lambda
+      TopicArn:
+        Fn::GetAtt: [SafyaStack, Outputs.EventsTopicArn]
   PerformanceTestFunctionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -66,6 +105,9 @@ Resources:
                 - lambda.amazonaws.com
             Action:
               - sts:AssumeRole
+      ManagedPolicyArns:
+        - Fn::GetAtt: [SafyaStack, Outputs.ProducerPolicyArn]
+        - Fn::GetAtt: [SafyaStack, Outputs.ConsumerPolicyArn]
       Policies:
         - PolicyName: PerformanceTestLambda
           PolicyDocument:
@@ -77,42 +119,6 @@ Resources:
                   - logs:CreateLogGroup
                   - logs:PutLogEvents
                 Resource: "*"
-              - Effect: Allow
-                Action: s3:ListBucket
-                Resource:
-                  Fn::Join:
-                    - ""
-                    - - "arn:aws:s3:::"
-                      - Fn::GetAtt: [SafyaStack, Outputs.EventsBucketName]
-              - Effect: Allow
-                Action:
-                  - s3:PutObject
-                  - s3:GetObject
-                Resource:
-                  Fn::Join:
-                    - ""
-                    - - "arn:aws:s3:::"
-                      - Fn::GetAtt: [SafyaStack, Outputs.EventsBucketName]
-                      - "/*"
-              - Effect: Allow
-                Action: "dynamodb:*"
-                Resource:
-                  - Fn::Join:
-                    - ""
-                    - - "arn:aws:dynamodb:"
-                      - Ref: AWS::Region
-                      - ":"
-                      - Ref: AWS::AccountId
-                      - ":table/"
-                      - Fn::GetAtt: [SafyaStack, Outputs.PartitionsTableName]
-                  - Fn::Join:
-                    - ""
-                    - - "arn:aws:dynamodb:"
-                      - Ref: AWS::Region
-                      - ":"
-                      - Ref: AWS::AccountId
-                      - ":table/"
-                      - Fn::GetAtt: [SafyaStack, Outputs.ConsumersTableName]
 Outputs:
   DeploymentBucketName:
     Description: Deployment bucket name

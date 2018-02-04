@@ -60,7 +60,7 @@ class PerformanceTester {
     let totalBytes = 0;
     let eventsRead = 0;
 
-    const results = await this.safyaConsumer.readEvents({
+    const { done } = await this.safyaConsumer.readEvents({
         partitionId,
         count
       },
@@ -70,8 +70,6 @@ class PerformanceTester {
         console.log(`Read ${event.length} bytes from partition ${partitionId}.`);
       },
     );
-
-    const done = results.eventsRemaining === 0;
 
     return {
       totalBytes,

@@ -29,8 +29,8 @@
   },
   "scripts": {
     "test": "mocha test/unit-tests.js",
-    "test:e2e": "node test/test-infra.js deploy-e2e && mocha test/e2e-tests.js",
-    "test:perf": "node test/test-infra.js deploy-perf && mocha test/perf-tests.js",
+    "test:e2e": "node test/test-infra.js deploy && mocha test/e2e-tests.js",
+    "test:perf": "node test/test-infra.js deploy && mocha test/perf-tests.js",
     "test:perf:test-only": "mocha test/perf-tests.js"
   }
 }

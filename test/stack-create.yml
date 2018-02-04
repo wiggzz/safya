@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Stack for performance testing Safya
+Description: Stack for testing Safya
 Resources:
   DeploymentBucket:
     Type: AWS::S3::Bucket

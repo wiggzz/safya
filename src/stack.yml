@@ -32,6 +32,8 @@ Conditions:
       - Ref: AutoScalingEnabled
       - true
 Resources:
+  EventsBucket:
+    Type: AWS::S3::Bucket
   PartitionsTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -64,6 +66,8 @@ Resources:
           Ref: InitialProvisionedCapacity
         WriteCapacityUnits:
           Ref: InitialProvisionedCapacity
+  EventsTopic:
+    Type: AWS::SNS::Topic
   PartitionsReadAutoScalingTarget:
     Type: AWS::ApplicationAutoScaling::ScalableTarget
     Condition: ProvisionAutoScaling
@@ -216,22 +220,79 @@ Resources:
                   - cloudwatch:SetAlarmState
                   - cloudwatch:DeleteAlarms
                 Resource: "*"
-  EventsBucket:
-    Type: AWS::S3::Bucket
+  ProducerPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - s3:PutObject
+            Resource:
+              Fn::Join:
+                - ""
+                - - "arn:aws:s3:::"
+                  - Ref: EventsBucket
+                  - "/*"
+          - Effect: Allow
+            Action:
+              - "dynamodb:GetItem"
+              - "dynamodb:PutItem"
+              - "dynamodb:UpdateItem"
+            Resource:
+              - Fn::Sub: "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${PartitionsTable}"
+          - Effect: Allow
+            Action: "sns:Publish"
+            Resource:
+              - Ref: EventsTopic
+  ConsumerPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - s3:GetObject
+            Resource:
+              Fn::Join:
+                - ""
+                - - "arn:aws:s3:::"
+                  - Ref: EventsBucket
+                  - "/*"
+          - Effect: Allow
+            Action:
+              - "dynamodb:GetItem"
+              - "dynamodb:PutItem"
+              - "dynamodb:UpdateItem"
+            Resource:
+              - Fn::Sub: "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ConsumersTable}"
+          - Effect: Allow
+            Action: "dynamodb:GetItem"
+            Resource:
+              - Fn::Sub: "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${PartitionsTable}"
 Outputs:
-  PartitionsTableName:
-    Description: Partitions table name
+  ProducerPolicyArn:
+    Description: Managed policy representing the permissions required to produce events on this Safya stack
     Value:
-      Ref: PartitionsTable
-  ConsumersTableName:
-    Description: Consumers table name
+      Ref: ProducerPolicy
+  ConsumerPolicyArn:
+    Description: Managed policy representing the permissions required to consumer events from this Safya stack
     Value:
-      Ref: ConsumersTable
-  EventsBucketName:
-    Description: Events bucket name
+      Ref: ConsumerPolicy
+  EventsTopicArn:
+    Description: Topic for listening to events. Run a Safya consumer inside a lambda listening on this topic for real-time consumption
     Value:
-      Ref: EventsBucket
+      Ref: EventsTopic
   ConfigString:
     Description: "Safya configuration string. Use this for constructing a new Safya object: new Safya({ config: <SafyaConfig> })"
     Value:
-      Fn::Sub: "{ \"partitionsTable\": \"${PartitionsTable}\", \"consumersTable\":\"${ConsumersTable}\", \"eventsBucket\":\"${EventsBucket}\", \"preferredPartitionCount\": ${PreferredPartitionCount} }"
+      Fn::Sub: >
+        {
+          "partitionsTable": "${PartitionsTable}",
+          "consumersTable": "${ConsumersTable}",
+          "eventsBucket": "${EventsBucket}",
+          "preferredPartitionCount": ${PreferredPartitionCount},
+          "eventsTopicArn": "${EventsTopic}"
+        }
