@@ -25,7 +25,7 @@ Parameters:
   PreferredPartitionCount:
     Type: Number
     Default: 10
-    Description: Preferred number of partitions (this is only guaranteed in some circumstances).
+    Description: Preferred number of partitions
 Conditions:
   ProvisionAutoScaling:
     Fn::Equals:

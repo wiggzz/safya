@@ -8,6 +8,9 @@
     "name": "Will James",
     "email": "jameswt@gmail.com"
   },
+  "files": [
+    "lib/"
+  ],
   "homepage": "https://github.com/wiggzz/safya",
   "dependencies": {
     "aws-sdk": "^2.183.0",
@@ -25,13 +28,17 @@
     "mocha": "^4.1.0",
     "sinon": "^4.2.0",
     "sinon-chai": "^2.14.0",
-    "webpack": "^3.10.0"
+    "webpack": "^3.10.0",
+    "webpack-node-externals": "^1.6.0"
   },
   "scripts": {
     "test": "mocha test/unit-tests.js",
     "test:e2e": "node test/test-infra.js deploy && mocha test/e2e-tests.js",
     "test:e2e:test-only": "mocha test/e2e-tests.js",
     "test:perf": "node test/test-infra.js deploy && mocha test/perf-tests.js",
-    "test:perf:test-only": "mocha test/perf-tests.js"
+    "test:perf:test-only": "mocha test/perf-tests.js",
+    "publish-to-s3": "node publishing/publish-to-s3.js",
+    "prepublish": "webpack",
+    "postpublish": "publish-to-s3"
   }
 }
