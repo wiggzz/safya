@@ -1,12 +1,12 @@
-const crypto = require("crypto");
-const log = require("loglevel");
-const s3 = require("./s3-storage");
-const dynamoDb = require("./dynamodb");
-const Partitioner = require("./Partitioner");
+const crypto = require('crypto');
+const log = require('loglevel');
+const s3 = require('./s3');
+const dynamoDb = require('./dynamodb');
+const Partitioner = require('./Partitioner');
 const Notifier = require('./Notifier');
-const { contentDigest, retryOnFailure } = require("./helpers");
+const { contentDigest, retryOnFailure, generateThreadId } = require('./helpers');
 
-const PARTITIONER_KEY = "meta_partitioner";
+const PARTITIONER_KEY = 'meta_partitioner';
 
 class Safya {
   constructor({
@@ -14,6 +14,7 @@ class Safya {
     partitionsTable,
     config = '{}',
     storage = s3,
+    database = dynamoDb,
     preferredPartitioner,
     notifier
   }) {
@@ -33,28 +34,39 @@ class Safya {
     const configPartitioner = configObject.preferredPartitionCount ? new Partitioner({partitionCount: configObject.preferredPartitionCount}) : undefined;
     this.preferredPartitioner = preferredPartitioner || configPartitioner;
     this.storage = storage;
-    this.notifier = notifier || new Notifier({ topicArn: configObject.eventsTopicArn });
+    this.database = database;
+    this.notifier = notifier || new Notifier({
+      topicArn: configObject.eventsTopicArn,
+      partitionsTable: this.partitionsTable
+    });
     this.partitioner = null;
+    this.asyncActions = Promise.resolve();
   }
 
   async writeEvent(partitionKey, data) {
     if (!data instanceof String || !data instanceof Buffer) {
-      throw new Error("Event data must either be string or buffer");
+      throw new Error('Event data must either be string or buffer');
     }
 
     const partitionId = await this.getPartitionId({ partitionKey, createIfNotExists: true });
 
-    const sequenceNumber = await this.reserveSequenceNumber({ partitionId });
+    const { sequenceNumber, ...otherAttributes } = await this.reserveSequenceNumber({ partitionId });
 
     const key = `events/${partitionId}/${sequenceNumber}`;
 
+    log.debug(`writing event to key ${key}`);
     await this.storage.putObjectAsync({
       Bucket: this.bucket,
       Key: key,
       Body: data
     });
 
-    await this.notifier.notifyForEvent({ partitionKey });
+    const promise = this.notifier.notifyForEvent({ partitionId, sequenceNumber, ...otherAttributes })
+      .catch(err => {
+        log.error('error during notification of event', err);
+      });
+
+    this.asyncActions = this.asyncActions.then(() => promise);
   }
 
   async getPartitionId({ partitionKey, createIfNotExists = false }) {
@@ -70,7 +82,7 @@ class Safya {
       }
     };
 
-    const { Item } = await dynamoDb.getAsync(params);
+    const { Item } = await this.database.getAsync(params);
 
     if (Item) {
       return Item.sequenceNumber;
@@ -85,18 +97,21 @@ class Safya {
       Key: {
         partitionId
       },
-      UpdateExpression: "ADD sequenceNumber :one",
+      UpdateExpression: 'ADD sequenceNumber :one',
       ExpressionAttributeValues: {
-        ":one": 1
+        ':one': 1
       },
-      ReturnValues: "UPDATED_NEW"
+      ReturnValues: 'ALL_NEW'
     };
 
-    const { Attributes: { sequenceNumber } } = await dynamoDb.updateAsync(
+    const { Attributes: { sequenceNumber, ...otherAttributes } } = await this.database.updateAsync(
       params
     );
 
-    return sequenceNumber - 1;
+    return {
+      sequenceNumber: sequenceNumber - 1,
+      ...otherAttributes
+    }
   }
 
   async getPartitioner({ createIfNotExists = false } = {}) {
@@ -111,7 +126,7 @@ class Safya {
       }
     };
 
-    const { Item } = await dynamoDb.getAsync(params);
+    const { Item } = await this.database.getAsync(params);
 
     if (Item) {
       this.partitioner = Partitioner.fromString(Item.partitioner);
@@ -121,7 +136,7 @@ class Safya {
         !this.partitioner.isEquivalentTo(this.preferredPartitioner)
       ) {
         log.warn(
-          "The partitioner currently installed in your Safya stack is not the same as your specified preferred partitioner."
+          'The partitioner currently installed in your Safya stack is not the same as your specified preferred partitioner.'
         );
       }
     } else if (createIfNotExists) {
@@ -131,9 +146,9 @@ class Safya {
         },
         {
           retries: 10,
-          predicate: err => err.code === "ConditionalCheckFailedException",
+          predicate: err => err.code === 'ConditionalCheckFailedException',
           messageOnFailure:
-            "Unable to initialize partitioner, maximum retries reached"
+            'Unable to initialize partitioner, maximum retries reached'
         }
       );
     } else {
@@ -146,7 +161,7 @@ class Safya {
   async initializePartitioner() {
     if (!this.preferredPartitioner) {
       log.warn(
-        "You did not specify a partitioner, so we will use a default partitioner."
+        'You did not specify a partitioner, so we will use a default partitioner.'
       );
       this.preferredPartitioner = new Partitioner();
     }
@@ -155,14 +170,14 @@ class Safya {
 
     const params = {
       TableName: this.partitionsTable,
-      ConditionExpression: "attribute_not_exists(partitionId)",
+      ConditionExpression: 'attribute_not_exists(partitionId)',
       Item: {
         partitionId: PARTITIONER_KEY,
         partitioner: partitioner.toString()
       }
     };
 
-    await dynamoDb.putAsync(params);
+    await this.database.putAsync(params);
 
     return partitioner;
   }

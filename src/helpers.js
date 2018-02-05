@@ -23,7 +23,12 @@ const retryOnFailure = async (fn, { retries = 10, predicate = (err) => true, mes
   }
 }
 
+const generateThreadId = () => {
+  return crypto.randomBytes(32).toString('hex');
+}
+
 module.exports = {
   contentDigest,
-  retryOnFailure
+  retryOnFailure,
+  generateThreadId
 };

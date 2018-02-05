@@ -1,10 +1,11 @@
 const crypto = require('crypto');
 const log = require('loglevel');
-const s3 = require('./s3-storage');
+const s3 = require('./s3');
 const dynamoDb = require('./dynamodb');
 const _ = require('lodash');
 const Safya = require('./Safya');
-const { contentDigest } = require('./helpers');
+const { contentDigest, generateThreadId } = require('./helpers');
+const Locker = require('./Locker');
 
 class SafyaConsumer {
   constructor({
@@ -14,6 +15,7 @@ class SafyaConsumer {
     name,
     config = '{}',
     storage = s3,
+    database = dynamoDb,
     lastActiveExpirationMs = 5000
   } = {}) {
     const configObject = JSON.parse(config);
@@ -39,14 +41,14 @@ class SafyaConsumer {
       throw new Error('Parameter name is required');
     }
 
-    this.storage = storage
-    this.lastActiveExpirationMs = lastActiveExpirationMs;
+    this.storage = storage;
+    this.database = database;
     this.safya = new Safya({
       eventsBucket: this.bucket,
       partitionsTable: this.partitionsTable,
       config,
       storage });
-    this.threadId = crypto.randomBytes(32).toString('hex');
+    this.locker = new Locker({ tableName: this.consumersTable, lockExpirationTimeMs: lastActiveExpirationMs });
   }
 
   async getPartitionIds() {
@@ -59,6 +61,13 @@ class SafyaConsumer {
     return await this.safya.getPartitionId({ partitionKey });
   }
 
+  async skipToEnd({ partitionId }) {
+    await this.locker.withLock({ partitionId, consumerId: this.consumerName }, async () => {
+      const sequenceNumber = await this.safya.getSequenceNumber({ partitionId });
+      await this._setSequenceNumber({ partitionId, sequenceNumber });
+    });
+  }
+
   async getSequenceNumber({ partitionId }) {
     const params = {
       TableName: this.consumersTable,
@@ -68,7 +77,7 @@ class SafyaConsumer {
       }
     };
 
-    const { Item } = await dynamoDb.getAsync(params);
+    const { Item } = await this.database.getAsync(params);
 
     if (Item && Item.sequenceNumber) {
       return Item.sequenceNumber;
@@ -86,8 +95,8 @@ class SafyaConsumer {
       const {
         sequenceNumber,
         consumptionCount
-      } = await this._withConsumerLock(
-        { partitionId, count, processEvent },
+      } = await this.locker.withLock(
+        { partitionId, consumerId: this.consumerName },
         this._readEventsUnsafe.bind(this, { partitionId, count, processEvent })
       );
 
@@ -101,7 +110,7 @@ class SafyaConsumer {
         done: eventsRemaining === 0
       };
     } catch (err) {
-      if (err.code === 'ConsumerLockFailedException') {
+      if (err.code === Locker.LockFailedExceptionCode) {
         return {
           done: true,
           eventsRead: 0
@@ -119,16 +128,16 @@ class SafyaConsumer {
         consumerId: this.consumerName,
         partitionId
       },
-      UpdateExpression: 'SET sequenceNumber = :sequenceNumber, activeExpiration = :activeExpiration',
-      ConditionExpression: 'activeThreadId = :threadId',
+      UpdateExpression: 'SET sequenceNumber = :sequenceNumber, lockExpiration = :lockExpiration',
+      ConditionExpression: 'lockThreadId = :threadId',
       ExpressionAttributeValues: {
-        ':activeExpiration': Date.now() + this.lastActiveExpirationMs,
+        ':lockExpiration': Date.now() + this.locker.lockExpirationTimeMs,
         ':sequenceNumber': sequenceNumber,
-        ':threadId': this.threadId
+        ':threadId': this.locker.threadId
       }
     }
 
-    await dynamoDb.updateAsync(params);
+    await this.database.updateAsync(params);
   }
 
   async _readEventsUnsafe({ partitionId, count, processEvent } = {}) {
@@ -151,70 +160,6 @@ class SafyaConsumer {
     }
 
     return { sequenceNumber, consumptionCount };
-  }
-
-  async _withConsumerLock({ partitionId }, closure) {
-    try {
-      await this._obtainConsumerLock({ partitionId });
-    } catch (err) {
-      if (err.code === 'ConditionalCheckFailedException') {
-        log.debug('Couldn\'t obtain consumer lock', this.threadId.slice(0, 6), partitionId);
-        const error = new Error('Unable to obtain consumer lock. Another consumer thread is operating on this partition.');
-        error.code = 'ConsumerLockFailedException';
-        throw error;
-      } else {
-        throw err;
-      }
-    }
-
-    log.debug('successfully obtained consumer lock', this.threadId.slice(0, 6), partitionId);
-
-    try {
-      return await closure();
-    } catch (err) {
-      throw err;
-    } finally {
-      await this._releaseConsumerLock({ partitionId });
-    }
-  }
-
-  async _obtainConsumerLock({ partitionId }) {
-    log.debug('obtaining consumer lock', this.threadId.slice(0, 6), partitionId);
-    const now = Date.now();
-    const params = {
-      TableName: this.consumersTable,
-      Key: {
-        consumerId: this.consumerName,
-        partitionId
-      },
-      UpdateExpression: 'SET activeThreadId = :threadId, activeExpiration = :activeExpiration',
-      ConditionExpression: 'attribute_not_exists(activeThreadId) OR activeExpiration < :timestamp',
-      ExpressionAttributeValues: {
-        ':threadId': this.threadId,
-        ':timestamp': now,
-        ':activeExpiration': now + this.lastActiveExpirationMs
-      }
-    }
-
-    await dynamoDb.updateAsync(params);
-  }
-
-  async _releaseConsumerLock({ partitionId }) {
-    log.debug('releasing consumer lock', this.threadId.slice(0, 6), partitionId);
-    const params = {
-      TableName: this.consumersTable,
-      Key: {
-        consumerId: this.consumerName,
-        partitionId
-      },
-      UpdateExpression: 'REMOVE activeThreadId, activeExpiration',
-      ConditionExpression: 'activeThreadId = :threadId',
-      ExpressionAttributeValues: {
-        ':threadId': this.threadId
-      }
-    }
-
-    await dynamoDb.updateAsync(params);
   }
 
   async _readOnce({ partitionId, sequenceNumber, processEvent }) {
