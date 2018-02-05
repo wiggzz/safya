@@ -1,6 +1,6 @@
 {
   "name": "safya",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "A simple, scalable, unified log powered by AWS S3 and DynamoDB",
   "main": "src",
   "license": "MIT",
