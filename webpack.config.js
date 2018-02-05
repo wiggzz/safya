@@ -17,7 +17,7 @@ module.exports = {
           loader: 'babel-loader',
           options: {
             presets: [
-              ['@babel/preset-env', { targets: { node: '6.10' }, shippedProposals: true }]
+              ['@babel/preset-env', { targets: { node: '6.10' } }]
             ]
           }
         }

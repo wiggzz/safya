@@ -128,12 +128,18 @@ class SafyaConsumer {
         consumerId: this.consumerName,
         partitionId
       },
-      UpdateExpression: 'SET sequenceNumber = :sequenceNumber, lockExpiration = :lockExpiration',
-      ConditionExpression: 'lockThreadId = :threadId',
+      UpdateExpression: 'SET sequenceNumber = :sequenceNumber, #lock = :lock',
+      ConditionExpression: '#lock.threadId = :threadId',
       ExpressionAttributeValues: {
-        ':lockExpiration': Date.now() + this.locker.lockExpirationTimeMs,
         ':sequenceNumber': sequenceNumber,
-        ':threadId': this.locker.threadId
+        ':threadId': this.locker.threadId,
+        ':lock': {
+          threadId: this.locker.threadId,
+          expiration: Date.now() + this.locker.lockExpirationTimeMs
+        }
+      },
+      ExpressionAttributeNames: {
+        '#lock': 'lock'
       }
     }
 

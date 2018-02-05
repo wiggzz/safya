@@ -50,7 +50,7 @@ class Safya {
 
     const partitionId = await this.getPartitionId({ partitionKey, createIfNotExists: true });
 
-    const { sequenceNumber, ...otherAttributes } = await this.reserveSequenceNumber({ partitionId });
+    const { sequenceNumber, lock } = await this.reserveSequenceNumber({ partitionId });
 
     const key = `events/${partitionId}/${sequenceNumber}`;
 
@@ -61,7 +61,7 @@ class Safya {
       Body: data
     });
 
-    const promise = this.notifier.notifyForEvent({ partitionId, sequenceNumber, ...otherAttributes })
+    const promise = this.notifier.notifyForEvent({ partitionId, sequenceNumber, lock })
       .catch(err => {
         log.error('error during notification of event', err);
       });
@@ -92,6 +92,7 @@ class Safya {
   }
 
   async reserveSequenceNumber({ partitionId }) {
+    log.debug(`reserving sequence number ${partitionId}`);
     const params = {
       TableName: this.partitionsTable,
       Key: {
@@ -104,13 +105,13 @@ class Safya {
       ReturnValues: 'ALL_NEW'
     };
 
-    const { Attributes: { sequenceNumber, ...otherAttributes } } = await this.database.updateAsync(
+    const { Attributes: { sequenceNumber, lock } } = await this.database.updateAsync(
       params
     );
 
     return {
       sequenceNumber: sequenceNumber - 1,
-      ...otherAttributes
+      lock
     }
   }
 

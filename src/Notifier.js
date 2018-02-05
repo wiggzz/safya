@@ -20,8 +20,8 @@ class Notifier {
     this.notifications = notifications;
   }
 
-  async notifyForEvent({ partitionId, sequenceNumber, ...otherAttributes }) {
-    if (!this.locker.tableItemLocked(otherAttributes)) {
+  async notifyForEvent({ partitionId, sequenceNumber, lock }) {
+    if (!this.locker.tableItemLocked(lock)) {
       try {
         await this.locker.withLock(
           { partitionId },
@@ -42,7 +42,7 @@ class Notifier {
         await this._notify({ partitionId, sequenceNumber: newSequenceNumber });
       }
     } else {
-      log.debug('table item locked', otherAttributes);
+      log.debug('table item locked', lock);
     }
   }
 
@@ -53,7 +53,7 @@ class Notifier {
   }
 
   async _notify({ partitionId, sequenceNumber }) {
-    log.debug(`Notifying on topic ${this.topicArn}, partition ${partitionId}, sequence no. ${sequenceNumber}.`);
+    log.debug(`Notifying on topic ${this.topicArn}, ${partitionId}:${sequenceNumber}`);
     await this.notifications.publishAsync({
       TopicArn: this.topicArn,
       Message: JSON.stringify({ partitionId, sequenceNumber })

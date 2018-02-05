@@ -3,7 +3,7 @@ const log = require('loglevel');
 const { generateThreadId } = require('./helpers');
 
 class Locker {
-  constructor({ tableName, lockExpirationTimeMs, database = dynamoDb }) {
+  constructor({ tableName, lockKey = 'lock', lockExpirationTimeMs, database = dynamoDb }) {
     if (!tableName) {
       throw new Error('Parameter tableName is required');
     }
@@ -13,6 +13,7 @@ class Locker {
     }
 
     this.tableName = tableName;
+    this.lockKey = lockKey;
     this.lockExpirationTimeMs = lockExpirationTimeMs
     this.threadId = generateThreadId();
     this.database = database;
@@ -43,8 +44,8 @@ class Locker {
     }
   }
 
-  tableItemLocked({ lockThreadId, lockExpiration }) {
-    return lockThreadId && lockExpiration > Date.now();
+  tableItemLocked({ threadId, expiration } = {}) {
+    return threadId && expiration > Date.now();
   }
 
   async obtainLock(key) {
@@ -53,12 +54,17 @@ class Locker {
     const params = {
       TableName: this.tableName,
       Key: key,
-      UpdateExpression: 'SET lockThreadId = :threadId, lockExpiration = :lockExpiration',
-      ConditionExpression: 'attribute_not_exists(lockThreadId) OR lockExpiration < :timestamp',
+      UpdateExpression: 'SET #lock = :lock',
+      ConditionExpression: 'attribute_not_exists(#lock) OR #lock.expiration < :timestamp',
       ExpressionAttributeValues: {
-        ':threadId': this.threadId,
         ':timestamp': now,
-        ':lockExpiration': now + this.lockExpirationTimeMs
+        ':lock': {
+          threadId: this.threadId,
+          expiration: now + this.lockExpirationTimeMs
+        }
+      },
+      ExpressionAttributeNames: {
+        '#lock': 'lock'
       }
     }
 
@@ -70,10 +76,13 @@ class Locker {
     const params = {
       TableName: this.tableName,
       Key: key,
-      UpdateExpression: 'REMOVE lockThreadId, lockExpiration',
-      ConditionExpression: 'lockThreadId = :threadId',
+      UpdateExpression: 'REMOVE #lock',
+      ConditionExpression: '#lock.threadId = :threadId',
       ExpressionAttributeValues: {
         ':threadId': this.threadId
+      },
+      ExpressionAttributeNames: {
+        '#lock': 'lock'
       }
     }
 
