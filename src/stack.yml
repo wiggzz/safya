@@ -1,7 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Safya unified log stack
-Metadata:
-  Version: "0.1.0"
 Parameters:
   AutoScalingEnabled:
     Type: String
@@ -274,13 +272,25 @@ Resources:
               - Fn::Sub: "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${PartitionsTable}"
 Outputs:
   ProducerPolicyArn:
-    Description: Managed policy representing the permissions required to produce events on this Safya stack
+    Description: Arn of managed policy representing the permissions required to produce events on this Safya stack
     Value:
       Ref: ProducerPolicy
   ConsumerPolicyArn:
-    Description: Managed policy representing the permissions required to consumer events from this Safya stack
+    Description: Arn of managed policy representing the permissions required to consumer events from this Safya stack
     Value:
       Ref: ConsumerPolicy
+  ProducerPolicyName:
+    Description: Name of managed policy representing the permissions required to produce events on this Safya stack
+    Value:
+      Fn::Select:
+        - 1
+        - Fn::Split: [ '/', { Ref: ProducerPolicy } ]
+  ConsumerPolicyName:
+    Description: Name of managed policy representing the permissions required to consumer events from this Safya stack
+    Value:
+      Fn::Select:
+        - 1
+        - Fn::Split: [ '/', { Ref: ConsumerPolicy } ]
   EventsTopicArn:
     Description: Topic for listening to events. Run a Safya consumer inside a lambda listening on this topic for real-time consumption
     Value:
