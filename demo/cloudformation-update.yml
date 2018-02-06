@@ -1,0 +1,135 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+Parameters:
+  SafyaVersion:
+    Type: String
+    Description: Version of Safya to deploy
+Resources:
+  UpdateProductDetailsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handler.updateProductDetails
+      Runtime: nodejs6.10
+      CodeUri: ./dist
+      Events:
+        PostProductDetails:
+          Type: Api
+          Properties:
+            Path: /product-details
+            Method: post
+      Environment:
+        Variables:
+          SAFYA_CONFIG:
+            Fn::GetAtt: [SafyaStack, Outputs.ConfigString]
+      Timeout: 30
+      Role:
+        Fn::GetAtt: [FunctionRole, Arn]
+  GetProductFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handler.getProduct
+      Runtime: nodejs6.10
+      CodeUri: ./dist
+      Events:
+        GetProduct:
+          Type: Api
+          Properties:
+            Path: /products/{productId}
+            Method: get
+      Environment:
+        Variables:
+          PRODUCT_TABLE:
+            Ref: ProductsTable
+          SAFYA_CONFIG:
+            Fn::GetAtt: [SafyaStack, Outputs.ConfigString]
+      Timeout: 30
+      Role:
+        Fn::GetAtt: [FunctionRole, Arn]
+  HandleEventFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: "${AWS::StackName}-HandleEventFunction"
+      Handler: handler.handleEvent
+      Runtime: nodejs6.10
+      CodeUri: ./dist
+      Events:
+        Event:
+          Type: SNS
+          Properties:
+            Topic:
+              Fn::GetAtt: [SafyaStack, Outputs.EventsTopicArn]
+      Environment:
+        Variables:
+          PRODUCT_TABLE:
+            Ref: ProductsTable
+          SAFYA_CONFIG:
+            Fn::GetAtt: [SafyaStack, Outputs.ConfigString]
+      Timeout: 30
+      Role:
+        Fn::GetAtt: [FunctionRole, Arn]
+  SafyaStack:
+      Type: AWS::CloudFormation::Stack
+      Properties:
+        TemplateURL:
+          Fn::Sub: "https://s3.amazonaws.com/safya/versions/${SafyaVersion}/stack.yml"
+  ProductsTable:
+    Type: AWS::Serverless::SimpleTable
+    PrimaryKey:
+      Name: productId
+      Type: String
+  FunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - Fn::GetAtt: [SafyaStack, Outputs.ProducerPolicyArn]
+        - Fn::GetAtt: [SafyaStack, Outputs.ConsumerPolicyArn]
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+        - Ref: ProductsTableCrudPolicy
+        - Ref: HandleEventFunctionInvokePolicy
+  ProductsTableCrudPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - "dynamodb:GetItem"
+              - "dynamodb:DeleteItem"
+              - "dynamodb:PutItem"
+              - "dynamodb:Scan"
+              - "dynamodb:Query"
+              - "dynamodb:UpdateItem"
+              - "dynamodb:BatchWriteItem"
+              - "dynamodb:BatchGetItem"
+            Resource:
+              Fn::Sub: "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProductsTable}"
+  HandleEventFunctionInvokePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: "lambda:InvokeFunction"
+            Resource:
+              Fn::Sub: "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-HandleEventFunction"
+  DeploymentBucket:
+    Type: AWS::S3::Bucket
+Outputs:
+  DeploymentBucketName:
+    Description: Deployment bucket name
+    Value:
+      Ref: DeploymentBucket
+
+

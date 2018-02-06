@@ -1,10 +1,10 @@
 const path = require('path');
 
-const defaultConfig = (filename) => ({
-  entry: filename,
+module.exports = {
+  entry: path.resolve(__dirname, 'handler.js'),
   output: {
     path: path.resolve(__dirname, 'dist'),
-    filename: filename,
+    filename: 'handler.js',
     libraryTarget: 'commonjs2'
   },
   module: {
@@ -16,7 +16,7 @@ const defaultConfig = (filename) => ({
           loader: 'babel-loader',
           options: {
             presets: [
-              ['@babel/preset-env', { "targets": { "node": "6.10" } }]
+              ['@babel/preset-env', { targets: { node: "6.10" }, shippedProposals: true }]
             ]
           }
         }
@@ -24,9 +24,4 @@ const defaultConfig = (filename) => ({
     ]
   },
   target: 'node'
-})
-
-module.exports = [
-  defaultConfig('application.js'),
-  defaultConfig('safya-rest.js')
-]
+};
