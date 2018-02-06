@@ -42,6 +42,26 @@ const updateProductDetails = (event, context, callback) => {
     })
 };
 
+const updateProductStock = (event, context, callback) => {
+  application.updateProductStock(JSON.parse(event.body))
+    .then(() => {
+      const response = {
+        statusCode: 204
+      };
+
+      callback(null, response);
+    })
+    .catch(err => {
+      console.error('Error in updateProductStock', err);
+      const response = {
+        statusCode: 500,
+        body: 'Internal server error'
+      };
+
+      callback(null, response);
+    })
+};
+
 const handleEvent = (event, context, callback) => {
   application.readAndReinvoke(event, context)
     .then(() => callback())
@@ -51,5 +71,6 @@ const handleEvent = (event, context, callback) => {
 module.exports = {
   handleEvent,
   updateProductDetails,
+  updateProductStock,
   getProduct
 };

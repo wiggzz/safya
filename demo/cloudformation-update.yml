@@ -5,6 +5,25 @@ Parameters:
     Type: String
     Description: Version of Safya to deploy
 Resources:
+  UpdateProductStockFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handler.updateProductStock
+      Runtime: nodejs6.10
+      CodeUri: ./dist
+      Events:
+        PostProductDetails:
+          Type: Api
+          Properties:
+            Path: /product-stock
+            Method: post
+      Environment:
+        Variables:
+          SAFYA_CONFIG:
+            Fn::GetAtt: [SafyaStack, Outputs.ConfigString]
+      Timeout: 30
+      Role:
+        Fn::GetAtt: [FunctionRole, Arn]
   UpdateProductDetailsFunction:
     Type: AWS::Serverless::Function
     Properties:

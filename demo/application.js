@@ -5,6 +5,7 @@ const dynamoDb = promisifyAll(new AWS.DynamoDB.DocumentClient({ region: 'us-east
 const lambda = promisifyAll(new AWS.Lambda({ region: 'us-east-1' }), { suffix: 'Promise' });
 
 const PRODUCT_DETAILS_UPDATED = 'PRODUCT_DETAILS_UPDATED';
+const PRODUCT_STOCK_UPDATED = 'PRODUCT_STOCK_UPDATED';
 
 const safya = new Safya({ config: process.env.SAFYA_CONFIG });
 const safyaConsumer = new SafyaConsumer({ name: 'demo-consumer', config: process.env.SAFYA_CONFIG });
@@ -14,6 +15,16 @@ const updateProductDetails = async ({ productId, details }) => {
     type: PRODUCT_DETAILS_UPDATED,
     productId,
     details
+  });
+
+  await safya.writeEvent(productId, payload);
+}
+
+const updateProductStock = async ({ productId, stock }) => {
+  const payload = JSON.stringify({
+    type: PRODUCT_STOCK_UPDATED,
+    productId,
+    stock
   });
 
   await safya.writeEvent(productId, payload);
@@ -32,6 +43,17 @@ const processEvent = async (rawEvent) => {
       UpdateExpression: 'set details = :details',
       ExpressionAttributeValues: {
         ':details': payload.details
+      }
+    });
+  } else if (payload.type === PRODUCT_STOCK_UPDATED) {
+    await dynamoDb.updateAsync({
+      TableName: process.env.PRODUCT_TABLE,
+      Key: {
+        id: payload.productId
+      },
+      UpdateExpression: 'set stock = :stock',
+      ExpressionAttributeValues: {
+        ':stock': payload.stock
       }
     });
   }
@@ -67,6 +89,7 @@ const readAndReinvoke = async (event, context) => {
 
 module.exports = {
   updateProductDetails,
+  updateProductStock,
   readAndReinvoke,
   getProduct
 };
