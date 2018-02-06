@@ -1,3 +1,4 @@
+const log = require('loglevel');
 const PerformanceTester = require('./PerformanceTester');
 
 const producerTestThread = function(event, context, callback) {

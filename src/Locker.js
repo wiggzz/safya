@@ -87,6 +87,7 @@ class Locker {
     }
 
     await this.database.updateAsync(params);
+    log.debug('successfully released lock');
   }
 }
 

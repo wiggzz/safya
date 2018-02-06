@@ -108,17 +108,7 @@ Resources:
       ManagedPolicyArns:
         - Fn::GetAtt: [SafyaStack, Outputs.ProducerPolicyArn]
         - Fn::GetAtt: [SafyaStack, Outputs.ConsumerPolicyArn]
-      Policies:
-        - PolicyName: PerformanceTestLambda
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - logs:CreateLogStream
-                  - logs:CreateLogGroup
-                  - logs:PutLogEvents
-                Resource: "*"
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
 Outputs:
   DeploymentBucketName:
     Description: Deployment bucket name

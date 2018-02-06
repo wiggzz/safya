@@ -75,6 +75,7 @@ class Safya {
   }
 
   async getSequenceNumber({ partitionId }) {
+    log.debug('getting partition sequence number');
     const params = {
       TableName: this.partitionsTable,
       Key: {
@@ -116,6 +117,7 @@ class Safya {
   }
 
   async getPartitioner({ createIfNotExists = false } = {}) {
+    log.debug('getting partitioner');
     if (this.partitioner) {
       return this.partitioner;
     }
@@ -160,6 +162,7 @@ class Safya {
   }
 
   async initializePartitioner() {
+    log.debug('initializing partitioner');
     if (!this.preferredPartitioner) {
       log.warn(
         'You did not specify a partitioner, so we will use a default partitioner.'

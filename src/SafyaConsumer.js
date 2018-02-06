@@ -69,6 +69,7 @@ class SafyaConsumer {
   }
 
   async getSequenceNumber({ partitionId }) {
+    log.debug('getting consumer sequence number', partitionId);
     const params = {
       TableName: this.consumersTable,
       Key: {
@@ -116,12 +117,14 @@ class SafyaConsumer {
           eventsRead: 0
         };
       } else {
+        log.debug('error reading events', err);
         throw err
       }
     }
   }
 
   async _setSequenceNumber({ partitionId, sequenceNumber }) {
+    log.debug(`setting sequence number ${partitionId}:${sequenceNumber}`);
     const params = {
       TableName: this.consumersTable,
       Key: {
@@ -186,7 +189,8 @@ class SafyaConsumer {
           return true;
         }
       } else {
-        throw err
+        log.debug('Error reading from S3', err);
+        throw err;
       }
     }
   }

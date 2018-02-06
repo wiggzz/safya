@@ -201,22 +201,21 @@ Resources:
             Principal:
               Service:
                 - application-autoscaling.amazonaws.com
-            Action:
-              - sts:AssumeRole
+            Action: "sts:AssumeRole"
       Policies:
-        - PolicyName: PerformanceTestLambda
+        - PolicyName: AutoScalingRolePolicy
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: Allow
                 Action:
-                  - dynamodb:DescribeTable
-                  - dynamodb:UpdateTable
-                  - cloudwatch:PutMetricAlarm
-                  - cloudwatch:DescribeAlarms
-                  - cloudwatch:GetMetricStatistics
-                  - cloudwatch:SetAlarmState
-                  - cloudwatch:DeleteAlarms
+                  - "dynamodb:DescribeTable"
+                  - "dynamodb:UpdateTable"
+                  - "cloudwatch:PutMetricAlarm"
+                  - "cloudwatch:DescribeAlarms"
+                  - "cloudwatch:GetMetricStatistics"
+                  - "cloudwatch:SetAlarmState"
+                  - "cloudwatch:DeleteAlarms"
                 Resource: "*"
   ProducerPolicy:
     Type: AWS::IAM::ManagedPolicy
@@ -226,18 +225,19 @@ Resources:
         Statement:
           - Effect: Allow
             Action:
-              - s3:PutObject
+              - "s3:PutObject"
             Resource:
-              Fn::Join:
-                - ""
-                - - "arn:aws:s3:::"
-                  - Ref: EventsBucket
-                  - "/*"
+              Fn::Sub: "arn:aws:s3:::${EventsBucket}/*"
           - Effect: Allow
             Action:
               - "dynamodb:GetItem"
+              - "dynamodb:DeleteItem"
               - "dynamodb:PutItem"
+              - "dynamodb:Scan"
+              - "dynamodb:Query"
               - "dynamodb:UpdateItem"
+              - "dynamodb:BatchWriteItem"
+              - "dynamodb:BatchGetItem"
             Resource:
               - Fn::Sub: "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${PartitionsTable}"
           - Effect: Allow
@@ -251,25 +251,33 @@ Resources:
         Version: "2012-10-17"
         Statement:
           - Effect: Allow
-            Action:
-              - s3:GetObject
+            Action: "s3:GetObject"
             Resource:
-              Fn::Join:
-                - ""
-                - - "arn:aws:s3:::"
-                  - Ref: EventsBucket
-                  - "/*"
+              Fn::Sub: "arn:aws:s3:::${EventsBucket}/*"
+          - Effect: Allow
+            Action: "s3:ListBucket"
+            Resource:
+              Fn::Sub: "arn:aws:s3:::${EventsBucket}"
           - Effect: Allow
             Action:
               - "dynamodb:GetItem"
+              - "dynamodb:DeleteItem"
               - "dynamodb:PutItem"
+              - "dynamodb:Scan"
+              - "dynamodb:Query"
               - "dynamodb:UpdateItem"
+              - "dynamodb:BatchWriteItem"
+              - "dynamodb:BatchGetItem"
             Resource:
-              - Fn::Sub: "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ConsumersTable}"
+              Fn::Sub: "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ConsumersTable}"
           - Effect: Allow
-            Action: "dynamodb:GetItem"
+            Action:
+              - "dynamodb:GetItem"
+              - "dynamodb:Scan"
+              - "dynamodb:Query"
+              - "dynamodb:BatchGetItem"
             Resource:
-              - Fn::Sub: "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${PartitionsTable}"
+              Fn::Sub: "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${PartitionsTable}"
 Outputs:
   ProducerPolicyArn:
     Description: Arn of managed policy representing the permissions required to produce events on this Safya stack

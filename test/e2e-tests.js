@@ -1,7 +1,7 @@
 const expect = require('chai').expect;
 const sinon = require('sinon');
 const testInfra = require('./test-infra');
-const { Safya, SafyaConsumer, Partitioner } = require('../lib');
+const { Safya, SafyaConsumer, Partitioner } = require('../src');
 const log = require('loglevel');
 const tests = require('./common-tests');
 

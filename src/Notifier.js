@@ -61,6 +61,7 @@ class Notifier {
   }
 
   async _getSequenceNumber({ partitionId }) {
+    log.debug('getting partiton sequence number', partitionId);
     const { Item: { sequenceNumber } } = await dynamoDb.getAsync({
       TableName: this.partitionsTable,
       Key: { partitionId }

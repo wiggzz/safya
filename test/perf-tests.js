@@ -1,7 +1,7 @@
 const expect = require('chai').expect;
 const sinon = require('sinon');
 const testInfra = require('./test-infra');
-const { runProducerTest, runConsumerTest } = require('./perf-lambda/invoke');
+const { runProducerTest, runConsumerTest } = require('./test-lambdas/invoke');
 const log = require('loglevel');
 log.setLevel('debug');
 
@@ -27,7 +27,7 @@ describe('performance', function () {
       { producerTestFunction,
         consumerTestFunction,
         safyaConfig
-      } = await testInfra.describePerfStack()
+      } = await testInfra.describeTestStack()
     );
   });
 
@@ -73,7 +73,7 @@ describe('performance', function () {
   });
 
   describe('consumer tests', () => {
-    it('should read as many events as possible (yea i need a better test)', async () => {
+    it.only('should read as many events as possible (yea i need a better test)', async () => {
       const report = await runConsumerTest({
         functionName: consumerTestFunction,
         safyaConfig,
