@@ -25,13 +25,13 @@ First, launch the Safya cloudformation template (https://s3.amazonaws.com/safya/
 
 [![Launch Safya Stack](https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png)]( https://console.aws.amazon.com/cloudformation/home#/stacks/new?stackName=safya&templateURL=https://s3.amazonaws.com/safya/versions/0.2.9/stack.yml)
 
-Once that is launched, you can use Safya in your code. First, install
+Once that is launched, you can use Safya in your code. First, install Safya
 
 ```shell
 yarn add safya
 ```
 
-Grab the Safya Config string from the stack output parameters:
+Grab the Safya Config string from the stack output parameters and put it in `config.json`:
 
 ```shell
 aws cloudformation describe-stacks --stack-name safya --query 'Stacks[0].Outputs[?OutputKey==`ConfigString`].OutputValue' --output text > config.json
@@ -57,7 +57,10 @@ Then, you can read back events from a partition:
 const { SafyaConsumer } = require('safya');
 const config = require('./config');
 
-const safyaConsumer = new SafyaConsumer({ config: '<config string from above>' });
+const safyaConsumer = new SafyaConsumer({
+  name: 'my-consumer',
+  config
+});
 
 safyaConsumer.getPartitionId({ partitionKey: 'partition-key' })
   .then(partitionId => {
@@ -96,14 +99,17 @@ We'll still have orchestration issues for long running consumer process, but it 
 Additionally, on any new items in a partition, trigger a new consumer for that partition.
 
 So, items in the Partitions table will be of the form
+```json
 {
   "partitionId": "[partition-id]",
   "sequenceNumber": "[sequence-number]"
 }
+```
 
 With a primary key of Id and no sort/range key.
 
 Items in the Consumers table will be of the form
+```json
 {
   "partitionId": "[partition-id]",
   "consumerId": "[consumer-id]",
@@ -111,6 +117,7 @@ Items in the Consumers table will be of the form
   "activeThreadId": "[thread id of active consumer]",
   "activeExpiration": "[time that the active consumer should be considered expired]"
 }
+```
 
 with a primary key of Id and a sort/range key of ConsumerId
 
