@@ -1,6 +1,6 @@
 const AWS = require('aws-sdk');
 const { promisifyAll } = require('bluebird');
 
-const sns = promisifyAll(new AWS.SNS());
+const sns = (options) => promisifyAll(new AWS.SNS(options));
 
 module.exports = sns;

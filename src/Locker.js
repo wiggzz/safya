@@ -1,9 +1,18 @@
 const dynamoDb = require('./dynamodb');
 const log = require('loglevel');
-const { generateThreadId } = require('./helpers');
+const { generateThreadId, parseConfig } = require('./helpers');
 
 class Locker {
-  constructor({ tableName, lockKey = 'lock', lockExpirationTimeMs, database = dynamoDb }) {
+  constructor({
+    tableName,
+    lockKey = 'lock',
+    lockExpirationTimeMs,
+    config
+  }) {
+    const configObject = parseConfig(config);
+
+    this.database = dynamoDb({ region: configObject.awsRegion });
+
     if (!tableName) {
       throw new Error('Parameter tableName is required');
     }
@@ -16,7 +25,6 @@ class Locker {
     this.lockKey = lockKey;
     this.lockExpirationTimeMs = lockExpirationTimeMs
     this.threadId = generateThreadId();
-    this.database = database;
   }
 
   async withLock(key, closure) {

@@ -34,15 +34,16 @@ yarn add safya
 Grab the Safya Config string from the stack output parameters:
 
 ```shell
-aws cloudformation describe-stacks --stack-name safya --query 'Stacks[0].Outputs[?OutputKey==`ConfigString`].OutputValue' --output text
+aws cloudformation describe-stacks --stack-name safya --query 'Stacks[0].Outputs[?OutputKey==`ConfigString`].OutputValue' --output text > config.json
 ```
 
 And then produce some events:
 
 ```javascript
 const { Safya } = require('safya');
+const config = require('./config');
 
-const safya = new Safya({ config: '<config string from above>' });
+const safya = new Safya({ config });
 
 safya.writeEvent('partition-key', 'i am an event, i will be written in binary to s3')
   .then(() => console.log('event written'));
@@ -54,6 +55,7 @@ Then, you can read back events from a partition:
 
 ```javascript
 const { SafyaConsumer } = require('safya');
+const config = require('./config');
 
 const safyaConsumer = new SafyaConsumer({ config: '<config string from above>' });
 

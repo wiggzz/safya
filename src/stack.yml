@@ -312,5 +312,6 @@ Outputs:
           "consumersTable": "${ConsumersTable}",
           "eventsBucket": "${EventsBucket}",
           "preferredPartitionCount": ${PreferredPartitionCount},
-          "eventsTopicArn": "${EventsTopic}"
+          "eventsTopicArn": "${EventsTopic}",
+          "awsRegion": "${AWS::Region}"
         }

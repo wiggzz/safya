@@ -13,12 +13,15 @@ class SafyaConsumer {
     partitionsTable,
     consumersTable,
     name,
-    config = '{}',
-    storage = s3,
-    database = dynamoDb,
+    config,
+    storage,
+    database,
     lastActiveExpirationMs = 5000
   } = {}) {
     const configObject = parseConfig(config);
+
+    this.storage = storage || s3({ region: configObject.awsRegion });
+    this.database = database || dynamoDb({ region: configObject.awsRegion });
 
     this.bucket = eventsBucket || configObject.eventsBucket;
     this.consumersTable = consumersTable || configObject.consumersTable;
@@ -41,14 +44,16 @@ class SafyaConsumer {
       throw new Error('Parameter name is required');
     }
 
-    this.storage = storage;
-    this.database = database;
     this.safya = new Safya({
       eventsBucket: this.bucket,
       partitionsTable: this.partitionsTable,
       config,
       storage });
-    this.locker = new Locker({ tableName: this.consumersTable, lockExpirationTimeMs: lastActiveExpirationMs });
+    this.locker = new Locker({
+      tableName: this.consumersTable,
+      lockExpirationTimeMs: lastActiveExpirationMs,
+      config
+    });
   }
 
   async getPartitionIds() {

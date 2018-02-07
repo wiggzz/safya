@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const log = require('loglevel');
+const AWS = require('aws-sdk');
 const s3 = require('./s3');
 const dynamoDb = require('./dynamodb');
 const Partitioner = require('./Partitioner');
@@ -12,13 +13,16 @@ class Safya {
   constructor({
     eventsBucket,
     partitionsTable,
-    config = '{}',
-    storage = s3,
-    database = dynamoDb,
+    config,
+    storage,
+    database,
     preferredPartitioner,
     notifier
   }) {
     const configObject = parseConfig(config);
+
+    this.storage = storage || s3({ region: configObject.awsRegion });
+    this.database = database || dynamoDb({ region: configObject.awsRegion });
 
     this.bucket = eventsBucket || configObject.eventsBucket;
     this.partitionsTable = partitionsTable || configObject.partitionsTable;
@@ -33,12 +37,7 @@ class Safya {
 
     const configPartitioner = configObject.preferredPartitionCount ? new Partitioner({partitionCount: configObject.preferredPartitionCount}) : undefined;
     this.preferredPartitioner = preferredPartitioner || configPartitioner;
-    this.storage = storage;
-    this.database = database;
-    this.notifier = notifier || new Notifier({
-      topicArn: configObject.eventsTopicArn,
-      partitionsTable: this.partitionsTable
-    });
+    this.notifier = notifier || new Notifier({ config });
     this.partitioner = null;
     this.asyncActions = Promise.resolve();
   }

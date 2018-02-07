@@ -2,22 +2,39 @@ const sns = require('./sns');
 const dynamoDb = require('./dynamodb');
 const log = require('loglevel');
 const Locker = require('./Locker');
+const { parseConfig } = require('./helpers');
 
 class Notifier {
-  constructor({ topicArn, partitionsTable, notifications = sns, maxLatencyMs = 1000 }) {
-    if (!topicArn) {
+  constructor({
+    topicArn,
+    partitionsTable,
+    notifications,
+    maxLatencyMs = 1000,
+    database,
+    config
+  }) {
+    const configObject = parseConfig(config);
+
+    this.database = database || dynamoDb({ region: configObject.awsRegion });
+    this.notifications = notifications || sns({ region: configObject.awsRegion });
+
+    this.partitionsTable = partitionsTable || configObject.partitionsTable;
+    this.topicArn = topicArn || configObject.eventsTopicArn;
+
+    if (!this.topicArn) {
       throw new Error('Parameter topicArn is required');
     }
 
-    if (!partitionsTable) {
+    if (!this.partitionsTable) {
       throw new Error('Parameter partitionsTable is required');
     }
 
-    this.topicArn = topicArn;
-    this.partitionsTable = partitionsTable;
     this.waiterExpirationMs = maxLatencyMs / 2;
-    this.locker = new Locker({ tableName: partitionsTable, lockExpirationTimeMs: maxLatencyMs });
-    this.notifications = notifications;
+    this.locker = new Locker({
+      tableName: this.partitionsTable,
+      lockExpirationTimeMs: maxLatencyMs,
+      config
+    });
   }
 
   async notifyForEvent({ partitionId, sequenceNumber, lock }) {
@@ -62,7 +79,7 @@ class Notifier {
 
   async _getSequenceNumber({ partitionId }) {
     log.debug('getting partiton sequence number', partitionId);
-    const { Item: { sequenceNumber } } = await dynamoDb.getAsync({
+    const { Item: { sequenceNumber } } = await this.database.getAsync({
       TableName: this.partitionsTable,
       Key: { partitionId }
     });
