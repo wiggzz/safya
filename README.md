@@ -19,7 +19,56 @@ Consumers just need to track a single sequence number in each partition they are
 
 ## Getting started
 
-Currently, this code is a work in progress which means it'll be hard for you to use it, but feel free to check out the concepts and ideas and take what you need.
+The set up is not as simple as I would love it to be, but here's some basic steps to get started. Please check the `demo/` folder for an example set up.
+
+First, launch the Safya cloudformation template (https://s3.amazonaws.com/safya/versions/0.2.8/stack.yml)
+
+[![Launch Safya Stack][https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png]][https://console.aws.amazon.com/cloudformation/home#/stacks/new?stackName=safya&templateURL=https://s3.amazonaws.com/safya/versions/0.2.8/stack.yml]
+
+Once that is launched, you can use Safya in your code. First, install
+
+```shell
+yarn add safya
+```
+
+Grab the Safya Config string from the stack output parameters:
+
+```shell
+aws cloudformation describe-stacks --stack-name safya --query 'Stacks[0].Outputs[?OutputKey==`ConfigString`].OutputValue' --output text
+```
+
+And then produce some events:
+
+```javascript
+const { Safya } = require('safya');
+
+const safya = new Safya({ config: '<config string from above>' });
+
+safya.writeEvent('partition-key', 'i am an event, i will be written in binary to s3')
+  .then(() => console.log('event written'));
+
+// event written
+```
+
+Then, you can read back events from a partition:
+
+```javascript
+const { SafyaConsumer } = require('safya');
+
+const safyaConsumer = new SafyaConsumer({ config: '<config string from above>' });
+
+safyaConsumer.getPartitionId({ partitionKey: 'partition-key' })
+  .then(partitionId => {
+    return safyaConsumer.readEvents({ partitionId }, (event) => {
+      console.log('Got an event:', event.toString('utf8'));
+    });
+  });
+
+// Got an event: i am an event, i will be written in binary to S3
+```
+
+Check out the source code for more details.
+
 
 # Discussion
 
