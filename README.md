@@ -21,9 +21,9 @@ Consumers just need to track a single sequence number in each partition they are
 
 The set up is not as simple as I would love it to be, but here's some basic steps to get started. Please check the `demo/` folder for an example set up.
 
-First, launch the Safya cloudformation template (https://s3.amazonaws.com/safya/versions/0.2.8/stack.yml)
+First, launch the Safya cloudformation template (https://s3.amazonaws.com/safya/versions/0.2.9/stack.yml)
 
-[![Launch Safya Stack](https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png)]( https://console.aws.amazon.com/cloudformation/home#/stacks/new?stackName=safya&templateURL=https://s3.amazonaws.com/safya/versions/0.2.8/stack.yml)
+[![Launch Safya Stack](https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png)]( https://console.aws.amazon.com/cloudformation/home#/stacks/new?stackName=safya&templateURL=https://s3.amazonaws.com/safya/versions/0.2.9/stack.yml)
 
 Once that is launched, you can use Safya in your code. First, install
 
