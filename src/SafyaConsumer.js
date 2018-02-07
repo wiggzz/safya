@@ -4,7 +4,7 @@ const s3 = require('./s3');
 const dynamoDb = require('./dynamodb');
 const _ = require('lodash');
 const Safya = require('./Safya');
-const { contentDigest, generateThreadId } = require('./helpers');
+const { contentDigest, generateThreadId, parseConfig } = require('./helpers');
 const Locker = require('./Locker');
 
 class SafyaConsumer {
@@ -18,7 +18,7 @@ class SafyaConsumer {
     database = dynamoDb,
     lastActiveExpirationMs = 5000
   } = {}) {
-    const configObject = JSON.parse(config);
+    const configObject = parseConfig(config);
 
     this.bucket = eventsBucket || configObject.eventsBucket;
     this.consumersTable = consumersTable || configObject.consumersTable;

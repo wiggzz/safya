@@ -27,8 +27,23 @@ const generateThreadId = () => {
   return crypto.randomBytes(32).toString('hex');
 }
 
+const parseConfig = (config) => {
+  if (typeof config === 'object') {
+    return config;
+  } else if (typeof config === 'string') {
+    try {
+      return JSON.parse(config);
+    } catch (err) {
+      throw new Error('Couldn\'t parse config string.');
+    }
+  } else {
+    throw new Error('Couldn\'t parse config string: it should be an object or a string as found in the Safya cloudformation outputs.');
+  }
+}
+
 module.exports = {
   contentDigest,
   retryOnFailure,
-  generateThreadId
+  generateThreadId,
+  parseConfig
 };

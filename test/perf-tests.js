@@ -3,7 +3,6 @@ const sinon = require('sinon');
 const testInfra = require('./test-infra');
 const { runProducerTest, runConsumerTest } = require('./test-lambdas/invoke');
 const log = require('loglevel');
-log.setLevel('debug');
 
 const prettyPrintBytes = (bytes) => {
   if (bytes < 1024) {

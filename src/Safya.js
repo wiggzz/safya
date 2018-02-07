@@ -4,7 +4,7 @@ const s3 = require('./s3');
 const dynamoDb = require('./dynamodb');
 const Partitioner = require('./Partitioner');
 const Notifier = require('./Notifier');
-const { contentDigest, retryOnFailure, generateThreadId } = require('./helpers');
+const { contentDigest, retryOnFailure, generateThreadId, parseConfig } = require('./helpers');
 
 const PARTITIONER_KEY = 'meta_partitioner';
 
@@ -18,7 +18,7 @@ class Safya {
     preferredPartitioner,
     notifier
   }) {
-    const configObject = JSON.parse(config);
+    const configObject = parseConfig(config);
 
     this.bucket = eventsBucket || configObject.eventsBucket;
     this.partitionsTable = partitionsTable || configObject.partitionsTable;

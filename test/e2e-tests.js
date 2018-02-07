@@ -5,8 +5,6 @@ const { Safya, SafyaConsumer, Partitioner } = require('../src');
 const log = require('loglevel');
 const tests = require('./common-tests');
 
-log.setLevel('debug');
-
 describe('end to end', function () {
   this.timeout(100000);
 

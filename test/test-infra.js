@@ -5,7 +5,6 @@ const _ = require('lodash');
 const log = require('loglevel');
 const { promisifyAll } = require('bluebird');
 const uploadTestLambda = require('./test-lambdas/upload');
-log.setLevel('debug');
 
 AWS.config.region = 'us-east-1';
 
