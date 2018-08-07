@@ -15,7 +15,7 @@ Safya is modeled on Kafka, although it currently only supports a single topic, b
 
 When an event is written to Safya, the producer determines the partition to write it, obtains a sequence number for the given partition (via dynamo DB) and then writes the event to `/events/${partitionId}/${sequenceNumber}` in S3.
 
-Consumers just need to track a single sequence number in each partition they are reading from (this is also managed by DynamoDB). In addition, consumers obtain a lock to the partition they are reading from to ensure no more than one consumer reads at once. This lock has an expiration time in case they fail, which allows another consumer to take over should the consumer fail.
+Consumers just need to track a single sequence number in each partition they are reading from (this is also managed by DynamoDB). In addition, consumers obtain a lock to the partition they are reading from to ensure no more than one instance of a consumer reads at once (given a multi-instance cluster, or multiple lambda functions consuming from a partition). This lock has an expiration time in case they fail, which allows another consumer to take over should the consumer instance fail.
 
 ## Getting started
 
